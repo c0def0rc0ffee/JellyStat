@@ -1,0 +1,32 @@
+# Local release tooling and notes
+/publish-github.sh
+/push-source.sh
+/publish.conf
+/GITHUB-RELEASE-GUIDE.md
+/.publish-allow
+/Github repository
+/build.conf
+/build-zip.py
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# NAS thumbnail and index metadata
+@eaDir/
+
+# Convention output folders (zips distributed via GitHub Releases instead)
+/JellyStat Dist/
+/JellyStat Git/
+/JellyStat App/
+
+# Local editor and tooling state (any dot folder except .github)
+.*/
+!.github/
+
+# Archives, logs, temp files
+*.zip
+*.7z
+*.log
+*.tmp

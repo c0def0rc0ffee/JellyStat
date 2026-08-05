@@ -1,0 +1,12 @@
+# Normalise to LF in the repository. The add-on is edited on Windows and runs
+# on Kodi under Linux, so without this the text files churn between CRLF and
+# LF on every commit.
+* text=auto eol=lf
+
+# PowerShell build scripts are run on Windows, so leave them CRLF.
+*.ps1 text eol=crlf
+
+# Binary assets must never be touched.
+*.png binary
+*.jpg binary
+*.zip binary

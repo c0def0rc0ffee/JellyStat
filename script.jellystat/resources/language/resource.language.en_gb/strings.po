@@ -1,0 +1,112 @@
+# Kodi Media Center language file
+# Addon Name: JellyStat
+# Addon id: script.jellystat
+# Addon Provider: c0def0rc0ffee
+msgid ""
+msgstr ""
+"Project-Id-Version: script.jellystat\n"
+"Report-Msgid-Bugs-To: \n"
+"Language: en_GB\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgctxt "#32001"
+msgid "Jellyfin server"
+msgstr ""
+
+msgctxt "#32002"
+msgid "Only needed if the Jellyfin for Kodi addon is not signed in"
+msgstr ""
+
+msgctxt "#32003"
+msgid "Server URL (e.g. http://jellyfin.local:8096)"
+msgstr ""
+
+msgctxt "#32004"
+msgid "API key (Dashboard - API Keys)"
+msgstr ""
+
+msgctxt "#32005"
+msgid "Username (blank = first user)"
+msgstr ""
+
+msgctxt "#32006"
+msgid "Ignore SSL certificate errors"
+msgstr ""
+
+msgctxt "#32010"
+msgid "Display"
+msgstr ""
+
+msgctxt "#32011"
+msgid "Genre stats: show percentages instead of counts"
+msgstr ""
+
+msgctxt "#32012"
+msgid "Summary: show average ratings"
+msgstr ""
+
+msgctxt "#32013"
+msgid "Summary: show favourite movies"
+msgstr ""
+
+msgctxt "#32014"
+msgid "Lists: show ratings"
+msgstr ""
+
+msgctxt "#32015"
+msgid "Recent window (days)"
+msgstr ""
+
+msgctxt "#32020"
+msgid "Website stats"
+msgstr ""
+
+msgctxt "#32021"
+msgid "Daily movie/TV genre snapshot (off while the URL is blank)"
+msgstr ""
+
+msgctxt "#32022"
+msgid "Website endpoint URL"
+msgstr ""
+
+msgctxt "#32023"
+msgid "Auth token (optional)"
+msgstr ""
+
+msgctxt "#32024"
+msgid "Schedule"
+msgstr ""
+
+msgctxt "#32025"
+msgid "When to send"
+msgstr ""
+
+msgctxt "#32026"
+msgid "As soon as Kodi loads"
+msgstr ""
+
+msgctxt "#32027"
+msgid "At a set time"
+msgstr ""
+
+msgctxt "#32028"
+msgid "Send time (hour, 24 hour clock)"
+msgstr ""
+
+msgctxt "#32029"
+msgid "Days to send"
+msgstr ""
+
+msgctxt "#32030"
+msgid "Every day"
+msgstr ""
+
+msgctxt "#32031"
+msgid "Weekdays only (Mon to Fri)"
+msgstr ""
+
+msgctxt "#32032"
+msgid "Weekends only (Sat and Sun)"
+msgstr ""
