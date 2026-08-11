@@ -92,7 +92,7 @@ msgid "At a set time"
 msgstr ""
 
 msgctxt "#32028"
-msgid "Send time (hour, 24 hour clock)"
+msgid "Send at (hour, 0 to 23)"
 msgstr ""
 
 msgctxt "#32029"
@@ -104,9 +104,9 @@ msgid "Every day"
 msgstr ""
 
 msgctxt "#32031"
-msgid "Weekdays only (Mon to Fri)"
+msgid "Weekdays (Mon to Fri)"
 msgstr ""
 
 msgctxt "#32032"
-msgid "Weekends only (Sat and Sun)"
+msgid "Weekends (Sat and Sun)"
 msgstr ""

@@ -70,8 +70,8 @@ Addon settings → **Website stats** → **Schedule**:
 - **When to send** (default **At a set time**), either hold the day's
   snapshot back until a chosen hour, or send as soon as Kodi loads (the
   behaviour before v0.11.0).
-- **Send time** (default **18**), the hour on a 24 hour clock. Nothing is
-  sent before it, so the day's viewing arrives as one update at a predictable
+- **Send at** (default **18**), the hour of the day, 0 to 23. Nothing is sent
+  before it, so the day's viewing arrives as one update at a predictable
   time.
 - **Days to send** (default **Every day**), or weekdays only, or weekends
   only.

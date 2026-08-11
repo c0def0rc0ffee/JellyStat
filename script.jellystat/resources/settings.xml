@@ -108,9 +108,7 @@
               <option label="32027">1</option>
             </options>
           </constraints>
-          <control type="list" format="integer">
-            <heading>32025</heading>
-          </control>
+          <control type="spinner" format="string"/>
         </setting>
         <setting id="send_hour" type="integer" label="32028">
           <level>0</level>
@@ -120,7 +118,7 @@
             <step>1</step>
             <maximum>23</maximum>
           </constraints>
-          <control type="slider" format="integer"/>
+          <control type="spinner" format="integer"/>
         </setting>
         <setting id="send_days" type="integer" label="32029">
           <level>0</level>
@@ -132,9 +130,7 @@
               <option label="32032">2</option>
             </options>
           </constraints>
-          <control type="list" format="integer">
-            <heading>32029</heading>
-          </control>
+          <control type="spinner" format="string"/>
         </setting>
       </group>
     </category>
