@@ -1,0 +1,2615 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JellyStat</title>
+<style>
+/* Palette lives on :root so the whole page can flip with one media query.
+   Dark first, because this is usually opened next to a TV in a dark room. */
+:root {
+  color-scheme: dark;
+  --bg: #0f1117;
+  --panel: #171a23;
+  --panel-2: #1d2130;
+  --line: #272b38;
+  --ink: #e8eaf2;
+  --ink-dim: #99a0b5;
+  --accent: #7c5cff;
+  --movie: #7c5cff;
+  --episode: #35c2a5;
+  --warn: #ff8b8b;
+  --heat-0: #1b1f2b;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f9;
+    --panel: #ffffff;
+    --panel-2: #f0f1f6;
+    --line: #e2e4ec;
+    --ink: #1a1c25;
+    --ink-dim: #676e85;
+    --heat-0: #e6e8f0;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 24px 20px 64px;
+  display: grid; grid-template-columns: 172px 1fr; gap: 24px;
+  align-items: start; }
+.wrap > header { grid-column: 1 / -1; }
+#error, #loading { grid-column: 2; }
+
+/* Left menu */
+nav.side {
+  position: sticky; top: 20px; display: flex; flex-direction: column;
+  gap: 2px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 8px;
+}
+nav.side button {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  border: 0; background: transparent; color: var(--ink-dim);
+  padding: 9px 12px; border-radius: 9px; font-size: 14px; cursor: pointer;
+}
+nav.side button svg { width: 17px; height: 17px; flex: none;
+  stroke: currentColor; fill: none; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; }
+nav.side button:hover { background: var(--panel-2); color: var(--ink); }
+nav.side button[aria-current="true"] {
+  background: var(--accent); color: #fff; font-weight: 600;
+}
+nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
+  margin: 0 4px 10px; }
+@media (max-width: 860px) {
+  .wrap { display: block; }
+  nav.side { position: static; flex-direction: row; margin-bottom: 16px;
+    padding: 6px; }
+  nav.side .navgap { display: none; }
+  nav.side button { padding: 8px 12px; }
+}
+
+/* Genre filter chips */
+.genrefilter { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.genrefilter button {
+  border: 1px solid var(--line); background: transparent; color: var(--ink-dim);
+  border-radius: 999px; padding: 4px 11px; font-size: 12.5px; cursor: pointer;
+}
+.genrefilter button:hover { color: var(--ink); border-color: var(--accent); }
+.genrefilter button[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.genrefilter .clearall { color: var(--warn); border-color: transparent; }
+.genrefilter .more { border-style: dashed; }
+
+/* Pager */
+.pager { display: flex; align-items: center; gap: 10px; margin-top: 14px;
+  justify-content: flex-end; }
+.pager button {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+}
+.pager button:hover:not([disabled]) { border-color: var(--accent); }
+.pager button[disabled] { opacity: .4; cursor: default; }
+.pager .range { font-size: 12.5px; color: var(--ink-dim);
+  margin-right: auto; }
+
+/* Suggestion grids */
+.grid { display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.sugg { background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 11px 13px; text-align: left; cursor: pointer;
+  color: inherit; font: inherit; }
+.sugg:hover { border-color: var(--accent); }
+.sugg .t { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+.sugg .m { font-size: 12px; color: var(--ink-dim); margin-top: 3px; }
+.sugg .seen { display: inline-block; font-size: 10.5px; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 999px; padding: 0 6px;
+  margin-top: 6px; }
+
+/* Play controls on an item page */
+.playbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin: 14px 0 4px; }
+.playbar button {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  border-radius: 999px; padding: 7px 15px; font-size: 13px; cursor: pointer;
+}
+.playbar button.primary { background: var(--accent); border-color: var(--accent);
+  color: #fff; font-weight: 600; }
+.playbar button:hover:not([disabled]) { border-color: var(--accent); }
+.playbar button[disabled] { opacity: .5; cursor: default; }
+.playbar .say { font-size: 12.5px; color: var(--ink-dim); }
+.playbar .say.bad { color: var(--warn); }
+
+/* A rate row's title doubles as a link to the item page */
+.rateitem .what button {
+  border: 0; background: transparent; color: inherit; font: inherit;
+  padding: 0; text-align: left; cursor: pointer;
+}
+.rateitem .what button:hover { color: var(--accent); }
+
+/* Rating rows */
+.rateitem { display: grid; grid-template-columns: 1fr auto; gap: 12px;
+  align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rateitem:last-child { border-bottom: 0; }
+.rateitem .what { font-size: 13.5px; }
+.rateitem .meta { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+.stars { display: flex; align-items: center; gap: 7px; }
+.stars .step {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  border-radius: 7px; width: 26px; height: 26px; font-size: 13px;
+  line-height: 1; cursor: pointer; padding: 0; flex: none;
+}
+.stars .step:hover:not([disabled]) { border-color: var(--accent); }
+.stars .step[disabled] { opacity: .35; cursor: default; }
+/* A range input is the one control that is genuinely draggable on a phone
+   and arrow-key friendly on a desktop, so it is styled rather than
+   replaced. */
+.stars input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 110px; height: 4px;
+  border-radius: 999px; background: var(--panel-2); outline: none;
+  cursor: pointer; flex: none;
+}
+.stars input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 15px; height: 15px;
+  border-radius: 50%; background: var(--accent); cursor: pointer;
+  border: 2px solid var(--panel);
+}
+.stars input[type="range"]::-moz-range-thumb {
+  width: 15px; height: 15px; border: 2px solid var(--panel);
+  border-radius: 50%; background: var(--accent); cursor: pointer;
+}
+.stars input[type="range"]:focus-visible { outline: 2px solid var(--accent);
+  outline-offset: 4px; }
+.stars .score {
+  font-variant-numeric: tabular-nums; font-size: 14px; min-width: 46px;
+  color: #f4c542; font-weight: 600;
+}
+.stars .score .none { color: var(--ink-dim); font-weight: 400; }
+.stars .clear { border: 0; background: transparent; font-size: 12px;
+  color: var(--ink-dim); cursor: pointer; padding: 2px 4px; }
+.stars .clear:hover { color: var(--warn); }
+/* A rated row dims its text but keeps the control at full strength: the
+   commonest next action after scoring something is changing your mind. */
+.rateitem.done .what, .rateitem.done .meta { opacity: .55; }
+.ratestate { font-size: 12px; color: var(--ink-dim); margin-top: 3px; }
+.ratestate.bad { color: var(--warn); }
+
+/* Settings view */
+.prefrow { margin-bottom: 20px; }
+.prefrow h3 { margin: 0 0 4px; font-size: 13.5px; }
+.prefrow p.hint { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-dim); }
+
+/* Search */
+.search { position: relative; flex: 1 1 260px; max-width: 380px; }
+.search input {
+  width: 100%; box-sizing: border-box; padding: 8px 14px; font-size: 14px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+  color: var(--ink); outline: none;
+}
+.search input:focus { border-color: var(--accent); }
+.search .results {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.35);
+  display: none; max-height: 60vh; overflow-y: auto;
+}
+.search .results.open { display: block; }
+.search .group { padding: 8px 14px 2px; font-size: 11px; color: var(--ink-dim);
+  text-transform: uppercase; letter-spacing: .06em; }
+.search .hit { display: block; width: 100%; text-align: left; border: 0;
+  background: transparent; color: var(--ink); padding: 8px 14px;
+  font-size: 13.5px; cursor: pointer; }
+.search .hit:hover, .search .hit.active { background: var(--panel-2); }
+.search .hit .sub { color: var(--ink-dim); font-size: 12px; }
+
+/* Item view */
+.itemhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+  margin-bottom: 4px; }
+.itemhead h2 { margin: 0; font-size: 20px; }
+.itemhead .year { color: var(--ink-dim); font-size: 15px; }
+.backlink { border: 0; background: transparent; color: var(--accent);
+  cursor: pointer; font-size: 13px; padding: 0; margin-bottom: 14px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 10px 0 4px;
+  font-size: 13.5px; color: var(--ink-dim); }
+.facts b { color: var(--ink); font-weight: 600; }
+
+/* Header */
+header {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
+  margin-bottom: 22px;
+}
+header h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+header h1 span { color: var(--accent); }
+header .ver { font-size: 11.5px; color: var(--ink-dim); align-self: center;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 9px; }
+.meta { color: var(--ink-dim); font-size: 13px; }
+.grow { flex: 1; }
+button.action {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  border-radius: 999px; padding: 7px 15px; font-size: 13px; cursor: pointer;
+}
+button.action:hover { background: var(--panel-2); }
+button.action[disabled] { opacity: .5; cursor: default; }
+a.action {
+  display: inline-block; border: 1px solid var(--line); background: var(--panel);
+  color: var(--ink); border-radius: 999px; padding: 7px 15px; font-size: 13px;
+  text-decoration: none;
+}
+a.action:hover { background: var(--panel-2); }
+
+/* Cards + panels */
+.cards {
+  display: grid; gap: 12px; margin-bottom: 22px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.card .k { font-size: 12px; color: var(--ink-dim); text-transform: uppercase;
+  letter-spacing: .06em; }
+.card .v { font-size: 26px; font-weight: 650; margin-top: 4px;
+  font-variant-numeric: tabular-nums; }
+.card .s { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+
+section.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 18px; margin-bottom: 18px;
+}
+section.panel > h2 {
+  margin: 0 0 2px; font-size: 15px; font-weight: 650;
+}
+section.panel > p.hint { margin: 0 0 16px; font-size: 12.5px;
+  color: var(--ink-dim); }
+.split { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 780px) { .split { grid-template-columns: 1fr; } }
+
+/* Toggle groups */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
+.tabs button {
+  border: 1px solid var(--line); background: transparent; color: var(--ink-dim);
+  border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+}
+.tabs button[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+
+/* Legend */
+.legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--ink-dim);
+  margin-top: 12px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+  margin-right: 5px; vertical-align: -1px; }
+
+/* Heatmap */
+.heat { overflow-x: auto; padding-bottom: 4px; }
+.heat svg { display: block; }
+.heat rect { rx: 2; ry: 2; }
+
+/* Bars */
+.barlist { display: flex; flex-direction: column; gap: 8px; }
+.bar { display: grid; grid-template-columns: 132px 1fr auto; gap: 10px;
+  align-items: center; font-size: 13px; }
+.bar .name { color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.bar .track { background: var(--panel-2); border-radius: 999px; height: 10px;
+  overflow: hidden; }
+.bar .fill { height: 100%; border-radius: 999px; background: var(--accent);
+  transition: width .3s ease; }
+.bar .val { font-variant-numeric: tabular-nums; color: var(--ink);
+  min-width: 62px; text-align: right; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--ink-dim); font-weight: 500; font-size: 12px;
+  text-transform: uppercase; letter-spacing: .05em; }
+tr:last-child td { border-bottom: 0; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tag { display: inline-block; background: var(--panel-2); border-radius: 6px;
+  padding: 1px 7px; font-size: 11.5px; color: var(--ink-dim); margin-right: 4px; }
+.scroll { max-height: 420px; overflow: auto; }
+/* Narrow phones: let the table keep its columns and scroll sideways inside
+   the panel, rather than wrapping every title onto four lines. */
+.scroll table { min-width: 400px; }
+
+/* Import */
+.filerow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type=file] { font-size: 13px; color: var(--ink-dim); max-width: 100%; }
+.stagebox { margin-top: 14px; border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px; background: var(--panel-2); }
+.stagebox h3 { margin: 0 0 8px; font-size: 14px; }
+.facts { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px;
+  margin-bottom: 10px; }
+.facts b { font-variant-numeric: tabular-nums; }
+.facts span { color: var(--ink-dim); }
+.optrow { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px;
+  margin: 10px 0; align-items: center; }
+.optrow label { display: flex; gap: 6px; align-items: center;
+  cursor: pointer; }
+.warn { color: var(--warn); font-size: 12.5px; }
+button.primary { background: var(--accent); border-color: var(--accent);
+  color: #fff; }
+button.danger { color: var(--warn); }
+
+/* States */
+#error { display: none; background: var(--panel); border: 1px solid var(--warn);
+  color: var(--warn); border-radius: var(--radius); padding: 16px;
+  margin-bottom: 18px; white-space: pre-wrap; }
+.empty { color: var(--ink-dim); font-size: 13px; padding: 6px 0; }
+#loading { color: var(--ink-dim); padding: 60px 0; text-align: center; }
+#dash { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Jelly<span>Stat</span></h1>
+    <span class="ver" id="ver"></span>
+    <div class="search">
+      <input id="searchbox" type="search" placeholder="Search films and shows…"
+             autocomplete="off" aria-label="Search films and shows">
+      <div class="results" id="searchresults"></div>
+    </div>
+    <div class="grow"></div>
+    <div class="meta" id="stamp"></div>
+    <button class="action" id="refresh">Refresh</button>
+  </header>
+
+  <nav class="side" aria-label="Sections">
+    <button data-view="overview" aria-current="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-6M21 19H3"/></svg>
+      Overview</button>
+    <button data-view="recommended">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg>
+      Recommended</button>
+    <button data-view="movies">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M7 5v14M17 5v14M2.5 12h19"/></svg>
+      Movies</button>
+    <button data-view="tv">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="7" width="19" height="12" rx="2"/><path d="M8 3.5 12 7l4-3.5"/></svg>
+      TV</button>
+    <button data-view="rate">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 14V3M4 3l9 3-3 3 3 3-9 3"/></svg>
+      Rate</button>
+    <button data-view="data">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/></svg>
+      Data</button>
+    <div class="navgap"></div>
+    <button data-view="settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.2 12a7.2 7.2 0 0 0-.1-1.2l2-1.5-2-3.4-2.3.9a7.3 7.3 0 0 0-2-1.2L14.4 3h-4l-.4 2.6a7.3 7.3 0 0 0-2 1.2l-2.3-.9-2 3.4 2 1.5a7.2 7.2 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-.9a7.3 7.3 0 0 0 2 1.2l.4 2.6h4l.4-2.6a7.3 7.3 0 0 0 2-1.2l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/></svg>
+      Settings</button>
+  </nav>
+
+  <div id="error"></div>
+  <div id="loading">Reading your Jellyfin library…</div>
+
+  <main id="dash">
+
+    <div id="view-overview">
+
+    <div class="cards" id="cards"></div>
+
+    <section class="panel">
+      <h2>Watching calendar</h2>
+      <p class="hint">Last 12 months. Jellyfin stores only the most recent
+        play date per item, so each square counts distinct titles finished
+        that day, not every replay.</p>
+      <div class="heat" id="heat"></div>
+      <div class="legend" id="heatlegend"></div>
+    </section>
+
+    <div class="split">
+      <section class="panel">
+        <h2>Time of day</h2>
+        <p class="hint" id="hourshint">When a watch was finished, on this box's clock.</p>
+        <div id="hours"></div>
+      </section>
+      <section class="panel">
+        <h2>Day of the week</h2>
+        <p class="hint" id="weekdayshint">Which days carry the viewing.</p>
+        <div id="weekdays"></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Genres</h2>
+      <p class="hint" id="genrehint"></p>
+      <div class="tabs" id="genretabs"></div>
+      <div class="barlist" id="genres"></div>
+    </section>
+
+    <div class="split">
+      <section class="panel">
+        <h2>Recent days</h2>
+        <p class="hint" id="recenthint"></p>
+        <div id="recentdays"></div>
+      </section>
+      <section class="panel">
+        <h2>Ratings you watch</h2>
+        <p class="hint">Community rating of every film you have played.</p>
+        <div id="ratings"></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Over time</h2>
+      <p class="hint">Built from one snapshot a day, taken by the addon on
+        this box, so it starts filling in from the day the dashboard was
+        first enabled.</p>
+      <div id="trend"></div>
+    </section>
+
+    <div class="split">
+      <section class="panel">
+        <h2>Top shows</h2>
+        <p class="hint">By distinct episodes played.</p>
+        <div class="scroll" id="shows"></div>
+      </section>
+      <section class="panel">
+        <h2>Recently watched</h2>
+        <p class="hint">Newest first, films and episodes together.</p>
+        <div class="scroll" id="recent"></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Rewatches</h2>
+      <p class="hint">Titles with more than one logged sitting — the thing
+        Jellyfin's play count knows happened but cannot date.</p>
+      <div class="scroll" id="rewatches"></div>
+    </section>
+
+    </div><!-- /view-overview -->
+
+    <div id="view-item" style="display:none"></div>
+
+    <div id="view-movies" style="display:none">
+      <div class="cards" id="movie-cards"></div>
+      <section class="panel">
+        <h2>Films by decade</h2>
+        <p class="hint">When the films you watch were released.</p>
+        <div id="movie-decades"></div>
+      </section>
+      <div class="split">
+        <section class="panel">
+          <h2>Most replayed</h2>
+          <p class="hint">Films with more than one play on the counter.</p>
+          <div class="scroll" id="movie-replayed"></div>
+        </section>
+        <section class="panel">
+          <h2>Best rated you have seen</h2>
+          <p class="hint">By community rating.</p>
+          <div class="scroll" id="movie-best"></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="view-tv" style="display:none">
+      <div class="cards" id="tv-cards"></div>
+      <div class="split">
+        <section class="panel">
+          <h2>Most watched shows</h2>
+          <p class="hint">By episodes played.</p>
+          <div class="scroll" id="tv-top"></div>
+        </section>
+        <section class="panel">
+          <h2>Best rated shows</h2>
+          <p class="hint">Average episode rating, shows with 3 or more
+            episodes watched.</p>
+          <div class="scroll" id="tv-best"></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="view-recommended" style="display:none">
+      <section class="panel">
+        <h2>Recommended films</h2>
+        <p class="hint" id="movie-recs-hint"></p>
+        <div class="tabs" id="movie-recs-tabs"></div>
+        <div class="genrefilter" id="movie-recs-genres"></div>
+        <div id="movie-recs"></div>
+        <div class="pager" id="movie-recs-pager"></div>
+      </section>
+      <section class="panel">
+        <h2>Recommended shows</h2>
+        <p class="hint" id="tv-recs-hint"></p>
+        <div class="tabs" id="tv-recs-tabs"></div>
+        <div class="genrefilter" id="tv-recs-genres"></div>
+        <div id="tv-recs"></div>
+        <div class="pager" id="tv-recs-pager"></div>
+      </section>
+      <section class="panel">
+        <h2>How these are chosen</h2>
+        <p class="hint">Entirely from your own watching: each candidate on
+          your server is scored by how much of your viewing is in its
+          genres, weighted by its rating. Nothing leaves the box and no
+          external service is consulted. What counts as eligible follows
+          the Recommendations setting.</p>
+        <div id="rec-profile"></div>
+      </section>
+    </div>
+
+    <div id="view-rate" style="display:none">
+      <section class="panel">
+        <h2>Rate what you have watched</h2>
+        <p class="hint" id="rate-note"></p>
+        <div class="facts" id="rate-summary"></div>
+        <div class="tabs" id="rate-tabs"></div>
+      </section>
+      <section class="panel">
+        <h2 id="rate-heading">To rate</h2>
+        <div class="tabs" id="rate-scope"></div>
+        <p class="hint" id="rate-scope-hint"></p>
+        <div id="rate-list"></div>
+      </section>
+    </div>
+
+    <div id="view-data" style="display:none">
+
+    <section class="panel">
+      <h2>Backup</h2>
+      <p class="hint">Everything the addon keeps that Jellyfin cannot give
+        back — the library mirror, the daily snapshots and the sitting log —
+        lives in one database file. Download a copy of it here; restoring is
+        just importing that file on this page (it is understood by the
+        importer like any other JellyStat <code>history.db</code>).</p>
+      <div class="facts" id="datafacts"></div>
+      <div class="filerow">
+        <a class="action" id="exportbtn" href="/api/export"
+           download>Download backup</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Import watch history</h2>
+      <p class="hint">Backfill the play log from a file: a Jellyfin
+        Playback Reporting backup, another box's JellyStat history.db, a
+        Trakt or Letterboxd export, or a generic CSV/JSON with
+        <code>started_at, media, title</code> columns. Nothing is written
+        until you review it below and choose how to apply it.</p>
+      <div class="filerow">
+        <input type="file" id="importfile">
+        <button class="action" id="stagebtn">Load and review</button>
+      </div>
+      <div id="staging"></div>
+      <div id="batches"></div>
+    </section>
+
+    </div><!-- /view-data -->
+
+    <div id="view-settings" style="display:none">
+
+    <section class="panel">
+      <h2>Settings</h2>
+      <p class="hint">Stored in this browser, so each device viewing the
+        dashboard can have its own.</p>
+
+      <div class="prefrow">
+        <h3>Date format</h3>
+        <p class="hint">Used everywhere a date appears.</p>
+        <div class="tabs" id="pref-dateformat"></div>
+      </div>
+
+      <div class="prefrow">
+        <h3>Clock</h3>
+        <p class="hint">Used everywhere a time of day appears.</p>
+        <div class="tabs" id="pref-clock"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Recommendations</h2>
+      <p class="hint">What the Recommended and Similar sections are allowed
+        to suggest. Films and TV are set separately, because a library you
+        rewatch films from is often one you only want new shows for.</p>
+
+      <div class="prefrow">
+        <h3>Films</h3>
+        <p class="hint">Applies to recommended films and to Similar on a
+          film's page.</p>
+        <div class="tabs" id="pref-recmovies"></div>
+      </div>
+
+      <div class="prefrow">
+        <h3>TV</h3>
+        <p class="hint">Applies to recommended shows and to Similar on a
+          show's page.</p>
+        <div class="tabs" id="pref-rectv"></div>
+      </div>
+    </section>
+
+    </div><!-- /view-settings -->
+
+  </main>
+</div>
+
+<script>
+"use strict";
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const SVG = "http://www.w3.org/2000/svg";
+
+let DATA = null;
+let HISTORY = null;
+let genreView = { media: "movies", window: "last_30_days", metric: "genres" };
+
+/* ---------- helpers ---------- */
+
+const $ = (id) => document.getElementById(id);
+
+function el(tag, attrs, text) {
+  const node = document.createElement(tag);
+  for (const key in (attrs || {})) node.setAttribute(key, attrs[key]);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function svgEl(tag, attrs) {
+  const node = document.createElementNS(SVG, tag);
+  for (const key in (attrs || {})) node.setAttribute(key, attrs[key]);
+  return node;
+}
+
+function num(value) {
+  return (value === null || value === undefined)
+    ? "–" : value.toLocaleString();
+}
+
+/* "every 3 days" reads better than "0.33 a day" once the pace drops below
+   one, which for most libraries is the normal case. */
+function pace(perDay) {
+  if (!perDay) return "–";
+  if (perDay >= 1) return perDay.toFixed(1) + " a day";
+  return "one every " + Math.round(1 / perDay) + " days";
+}
+
+function gap(minutes) {
+  if (!minutes) return "–";
+  if (minutes < 90) return minutes + " min";
+  const hours = minutes / 60;
+  if (hours < 48) return hours.toFixed(1) + " h";
+  return (hours / 24).toFixed(1) + " days";
+}
+
+function plural(count, word) {
+  return count + " " + word + (count === 1 ? "" : "s");
+}
+
+/* ---------- preferences (per browser) ---------- */
+
+const PREF_KEY = "jellystat_prefs";
+const DATE_FORMATS = {
+  iso:  { label: "2026-08-20" },
+  dmy:  { label: "20/08/2026" },
+  mdy:  { label: "08/20/2026" },
+  long: { label: "20 Aug 2026" },
+};
+const CLOCKS = { h24: { label: "21:40" }, h12: { label: "9:40 pm" } };
+const REC_MODES = {
+  new:  { label: "Only ones I have not seen" },
+  both: { label: "Seen and new" },
+};
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+let PREFS = { dateFormat: "iso", clock: "h24",
+              recMovies: "new", recTv: "new" };
+try {
+  const saved = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
+  if (DATE_FORMATS[saved.dateFormat]) PREFS.dateFormat = saved.dateFormat;
+  if (CLOCKS[saved.clock]) PREFS.clock = saved.clock;
+  if (REC_MODES[saved.recMovies]) PREFS.recMovies = saved.recMovies;
+  if (REC_MODES[saved.recTv]) PREFS.recTv = saved.recTv;
+} catch (err) { /* corrupted storage: defaults are fine */ }
+
+/* The seen/new choice for one medium, as the query flag the API wants. */
+function seenFlag(media) {
+  return (media === "tv" ? PREFS.recTv : PREFS.recMovies) === "both"
+    ? "1" : "0";
+}
+
+function savePrefs() {
+  try { localStorage.setItem(PREF_KEY, JSON.stringify(PREFS)); }
+  catch (err) { /* private mode: prefs just last for the visit */ }
+}
+
+/* All server dates are "YYYY-MM-DD" or "YYYY-MM-DD[T ]HH:MM[:SS]". These
+   two are the only way a date or time reaches the page, so the preference
+   really is site-wide. */
+function fmtDay(value) {
+  if (!value) return "–";
+  const day = String(value).slice(0, 10);
+  const [y, m, d] = day.split("-");
+  if (!d) return day;
+  switch (PREFS.dateFormat) {
+    case "dmy": return d + "/" + m + "/" + y;
+    case "mdy": return m + "/" + d + "/" + y;
+    case "long": return String(+d) + " " + MONTHS[+m - 1] + " " + y;
+    default: return day;
+  }
+}
+
+function fmtTime(value) {
+  const raw = String(value).replace("T", " ");
+  const time = raw.slice(11, 16);
+  if (!time) return "";
+  if (PREFS.clock === "h12") {
+    const [h, mins] = time.split(":");
+    const hour = +h % 12 || 12;
+    return hour + ":" + mins + (+h < 12 ? " am" : " pm");
+  }
+  return time;
+}
+
+function fmtStamp(value) {
+  if (!value) return "–";
+  const time = fmtTime(value);
+  return fmtDay(value) + (time ? " " + time : "");
+}
+
+/* ---------- cards ---------- */
+
+function renderCards() {
+  const totals = DATA.totals;
+  const days = DATA.recent_days;
+  const m30 = DATA.snapshot.movies.last_30_days;
+  const tv30 = DATA.snapshot.tv.last_30_days;
+  const cards = [
+    { k: "Films watched", v: num(totals.movies),
+      s: num(totals.movies_recent) + " in the last " + days + " days" },
+    { k: "Episodes watched", v: num(totals.episodes),
+      s: num(totals.episodes_recent) + " in the last " + days + " days" },
+    { k: "Total plays", v: num(totals.plays),
+      s: "counting every replay" },
+    /* Pace leads with the 30-day window: the all-time figure divides by
+       the span since the earliest last-played date, which a bulk
+       "mark watched" squashes into nonsense (9 films a day, forever). */
+    { k: "Film pace (30 days)", v: pace(m30.per_day),
+      s: "one every " + gap(m30.avg_gap_minutes) + " on average" },
+    { k: "Episode pace (30 days)", v: pace(tv30.per_day),
+      s: "one every " + gap(tv30.avg_gap_minutes) + " on average" },
+    { k: "Current streak", v: plural(DATA.streaks.current, "day"),
+      s: "longest " + plural(DATA.streaks.longest, "day") },
+    { k: "Average film", v: totals.avg_movie_rating
+        ? "★ " + totals.avg_movie_rating.toFixed(1) : "–",
+      s: totals.avg_episode_rating
+        ? "episodes ★ " + totals.avg_episode_rating.toFixed(1)
+        : "no episode ratings" },
+  ];
+  const host = $("cards");
+  host.textContent = "";
+  cards.forEach((card) => {
+    const box = el("div", { class: "card" });
+    box.append(el("div", { class: "k" }, card.k),
+               el("div", { class: "v" }, card.v),
+               el("div", { class: "s" }, card.s));
+    host.append(box);
+  });
+}
+
+/* ---------- heatmap ---------- */
+
+function renderHeatmap() {
+  resolveHeatColours();
+  const calendar = DATA.calendar;
+  const cell = 12, gapPx = 3, step = cell + gapPx;
+  const top = 16, left = 30;
+
+  /* Columns are weeks starting Monday, so the first column is padded with
+     blanks up to the first real day rather than shifting every row. */
+  const first = new Date(calendar[0].date + "T00:00:00");
+  const lead = (first.getDay() + 6) % 7;
+  const slots = lead + calendar.length;
+  const weeks = Math.ceil(slots / 7);
+
+  const max = calendar.reduce(
+    (best, day) => Math.max(best, day.movies + day.episodes), 0);
+  const svg = svgEl("svg", {
+    width: left + weeks * step,
+    height: top + 7 * step + 4,
+    role: "img",
+    "aria-label": "Watching calendar for the last twelve months",
+  });
+
+  DAY_NAMES.forEach((name, index) => {
+    if (index % 2) return;                       /* every other row, or it crowds */
+    const label = svgEl("text", {
+      x: 0, y: top + index * step + cell - 2,
+      "font-size": 10, fill: "var(--ink-dim)",
+    });
+    label.textContent = name;
+    svg.append(label);
+  });
+
+  let lastMonth = -1;
+  calendar.forEach((day, index) => {
+    const slot = lead + index;
+    const week = Math.floor(slot / 7);
+    const row = slot % 7;
+    const total = day.movies + day.episodes;
+    const shade = max ? total / max : 0;
+    const rect = svgEl("rect", {
+      x: left + week * step, y: top + row * step,
+      width: cell, height: cell,
+      fill: total ? mixColour(shade, day) : "var(--heat-0)",
+    });
+    const title = svgEl("title");
+    title.textContent = fmtDay(day.date) + ": " + (total
+      ? plural(day.movies, "film") + ", " + plural(day.episodes, "episode")
+      : "nothing watched");
+    rect.append(title);
+    svg.append(rect);
+
+    const date = new Date(day.date + "T00:00:00");
+    if (date.getDate() <= 7 && date.getMonth() !== lastMonth) {
+      lastMonth = date.getMonth();
+      const label = svgEl("text", {
+        x: left + week * step, y: 10,
+        "font-size": 10, fill: "var(--ink-dim)",
+      });
+      label.textContent = date.toLocaleString(undefined, { month: "short" });
+      svg.append(label);
+    }
+  });
+
+  /* Mark where the play log takes over from last-played inference. */
+  const since = DATA.playlog && DATA.playlog.since;
+  if (since && since >= calendar[0].date && since <= calendar[calendar.length - 1].date) {
+    const index = calendar.findIndex((d) => d.date >= since);
+    const week = Math.floor((lead + index) / 7);
+    const markX = left + week * step - Math.ceil(gapPx / 2);
+    svg.append(svgEl("line", {
+      x1: markX, x2: markX, y1: top - 2, y2: top + 7 * step,
+      stroke: "var(--accent)", "stroke-width": 2, "stroke-dasharray": "3 3",
+    }));
+    const mark = svgEl("text", {
+      x: markX + 4, y: top + 7 * step + 2, "font-size": 10,
+      fill: "var(--accent)",
+    });
+    mark.textContent = "\u2192 real plays";
+    svg.append(mark);
+  }
+
+  $("heat").textContent = "";
+  $("heat").append(svg);
+
+  $("heatlegend").textContent = "";
+  $("heatlegend").append(
+    legendSwatch("var(--movie)", "mostly films"),
+    legendSwatch("var(--episode)", "mostly episodes"),
+    el("span", {}, "darker means a quieter day"));
+}
+
+/* A square's hue says what was watched, its opacity how much: the day's
+   dominant medium, faded towards the background when it was a quiet day.
+   The two theme colours are resolved once per render rather than per cell -
+   365 forced style recalculations is a visible pause on a Pi. */
+let heatRGB = null;
+
+function resolveHeatColours() {
+  const probe = document.createElement("span");
+  document.body.append(probe);
+  const read = (name) => {
+    probe.style.color = name;
+    const parts = getComputedStyle(probe).color.match(/\d+/g);
+    return parts ? parts.slice(0, 3).join(",") : "124,92,255";
+  };
+  heatRGB = { movie: read("var(--movie)"), episode: read("var(--episode)") };
+  probe.remove();
+}
+
+function mixColour(shade, day) {
+  const base = day.movies >= day.episodes ? heatRGB.movie : heatRGB.episode;
+  const opacity = 0.28 + 0.72 * Math.min(shade * 2.2, 1);
+  return "rgba(" + base + "," + opacity.toFixed(2) + ")";
+}
+
+function legendSwatch(colour, text) {
+  const span = el("span");
+  const dot = el("i");
+  dot.style.background = colour;
+  span.append(dot, document.createTextNode(text));
+  return span;
+}
+
+/* ---------- column charts (hours, weekdays, recent days) ---------- */
+
+function columnChart(host, rows, options) {
+  const width = 100 / rows.length;
+  const max = rows.reduce((best, row) => Math.max(best, row.a + row.b), 0) || 1;
+  const chart = el("div");
+  chart.style.display = "flex";
+  chart.style.alignItems = "flex-end";
+  chart.style.gap = "2px";
+  chart.style.height = (options.height || 130) + "px";
+  rows.forEach((row) => {
+    const column = el("div", { title: row.title });
+    column.style.flex = "1 1 " + width + "%";
+    column.style.display = "flex";
+    column.style.flexDirection = "column";
+    column.style.justifyContent = "flex-end";
+    column.style.height = "100%";
+    column.style.minWidth = "3px";
+    const total = row.a + row.b;
+    [["b", "var(--episode)"], ["a", "var(--movie)"]].forEach(([key, colour]) => {
+      const value = row[key];
+      if (!value) return;
+      const piece = el("div");
+      piece.style.background = colour;
+      piece.style.height = (100 * value / max) + "%";
+      piece.style.borderRadius = (key === "b" && total === value)
+        ? "3px" : "0";
+      column.append(piece);
+    });
+    if (!total) {
+      const stub = el("div");
+      stub.style.background = "var(--panel-2)";
+      stub.style.height = "2px";
+      column.append(stub);
+    }
+    chart.append(column);
+  });
+
+  const axis = el("div");
+  axis.style.display = "flex";
+  axis.style.gap = "2px";
+  axis.style.marginTop = "6px";
+  axis.style.fontSize = "11px";
+  axis.style.color = "var(--ink-dim)";
+  rows.forEach((row, index) => {
+    const label = el("div", {}, row.label && options.showLabel(index)
+      ? row.label : "");
+    label.style.flex = "1 1 " + width + "%";
+    label.style.textAlign = "center";
+    label.style.overflow = "hidden";
+    axis.append(label);
+  });
+
+  host.textContent = "";
+  host.append(chart, axis);
+  if (options.legend !== false) host.append(legendRow());
+}
+
+function legendRow() {
+  const legend = el("div", { class: "legend" });
+  legend.append(legendSwatch("var(--movie)", "films"),
+                legendSwatch("var(--episode)", "episodes"));
+  return legend;
+}
+
+function habitHints() {
+  const log = DATA.playlog || {};
+  if (log.since) {
+    const extra = log.summary.sessions.toLocaleString()
+      + " real sessions logged since " + log.since + ".";
+    $("hourshint").textContent = "When sittings actually started. " + extra
+      + (DATA.dateonly_note || "");
+    $("weekdayshint").textContent = "Which days carry the viewing, from the "
+      + "same sessions.";
+  }
+}
+
+function renderHours() {
+  const rows = DATA.hours.map((slot) => ({
+    a: slot.movies, b: slot.episodes,
+    label: String(slot.hour).padStart(2, "0"),
+    title: String(slot.hour).padStart(2, "0") + ":00 — "
+      + plural(slot.movies, "film") + ", " + plural(slot.episodes, "episode"),
+  }));
+  columnChart($("hours"), rows, { showLabel: (i) => i % 3 === 0 });
+}
+
+function renderWeekdays() {
+  const rows = DATA.weekdays.map((slot) => ({
+    a: slot.movies, b: slot.episodes,
+    label: DAY_NAMES[slot.weekday],
+    title: DAY_NAMES[slot.weekday] + " — " + plural(slot.movies, "film")
+      + ", " + plural(slot.episodes, "episode"),
+  }));
+  columnChart($("weekdays"), rows, { showLabel: () => true });
+}
+
+function renderRecentDays() {
+  const days = DATA.recent_days;
+  const slice = DATA.calendar.slice(-days);
+  $("recenthint").textContent = "Each of the last " + days + " days.";
+  const rows = slice.map((day, index) => ({
+    a: day.movies, b: day.episodes,
+    label: day.date.slice(8),
+    title: fmtDay(day.date) + " — " + plural(day.movies, "film") + ", "
+      + plural(day.episodes, "episode"),
+    _index: index,
+  }));
+  columnChart($("recentdays"), rows,
+    { showLabel: (i) => i % 5 === 0, height: 120 });
+}
+
+/* ---------- genres ---------- */
+
+const GENRE_METRICS = {
+  genres: {
+    label: "Titles",
+    key: "count",
+    hint: "How many distinct titles carry each genre. A film with three "
+      + "genres counts in all three, so the shares can add up past 100%.",
+  },
+  genres_by_plays: {
+    label: "Plays",
+    key: "plays",
+    hint: "Weighted by how often each title was played, so a film you "
+      + "rewatch four times pulls its genre up four times.",
+  },
+  genres_primary: {
+    label: "Primary only",
+    key: "count",
+    hint: "Only each title's first listed genre counts, so every title lands "
+      + "in exactly one bucket and the shares add up to 100%.",
+  },
+};
+
+function renderGenreTabs() {
+  const tabs = $("genretabs");
+  tabs.textContent = "";
+  const groups = [
+    [["movies", "Films"], ["tv", "TV"]].map(([value, label]) =>
+      button(label, genreView.media === value, () => {
+        genreView.media = value; renderGenres();
+      })),
+    [["last_30_days", "Last 30 days"], ["all_time", "All time"]]
+      .map(([value, label]) => button(label, genreView.window === value, () => {
+        genreView.window = value; renderGenres();
+      })),
+    Object.keys(GENRE_METRICS).map((value) =>
+      button(GENRE_METRICS[value].label, genreView.metric === value, () => {
+        genreView.metric = value; renderGenres();
+      })),
+  ];
+  groups.forEach((group, index) => {
+    if (index) {
+      const spacer = el("span");
+      spacer.style.width = "12px";
+      tabs.append(spacer);
+    }
+    group.forEach((node) => tabs.append(node));
+  });
+}
+
+function button(label, pressed, onClick) {
+  const node = el("button", { type: "button" }, label);
+  node.setAttribute("aria-pressed", pressed ? "true" : "false");
+  node.addEventListener("click", onClick);
+  return node;
+}
+
+function renderGenres() {
+  renderGenreTabs();
+  const metric = GENRE_METRICS[genreView.metric];
+  $("genrehint").textContent = metric.hint;
+  const block = DATA.snapshot[genreView.media][genreView.window];
+  const rows = block[genreView.metric] || [];
+  const host = $("genres");
+  host.textContent = "";
+  if (!rows.length) {
+    host.append(el("p", { class: "empty" },
+      "Nothing watched in this window yet."));
+    return;
+  }
+  const max = rows[0][metric.key] || 1;
+  const colour = genreView.media === "movies"
+    ? "var(--movie)" : "var(--episode)";
+  rows.slice(0, 14).forEach((row) => {
+    const bar = el("div", { class: "bar" });
+    const track = el("div", { class: "track" });
+    const fill = el("div", { class: "fill" });
+    fill.style.width = (100 * row[metric.key] / max) + "%";
+    fill.style.background = colour;
+    track.append(fill);
+    bar.append(el("div", { class: "name", title: row.genre }, row.genre),
+               track,
+               el("div", { class: "val" },
+                 num(row[metric.key]) + " · " + row.percent.toFixed(0) + "%"));
+    host.append(bar);
+  });
+}
+
+/* ---------- ratings ---------- */
+
+function renderRatings() {
+  const buckets = DATA.ratings.buckets;
+  const rows = buckets.map((count, rating) => ({
+    a: count, b: 0, label: String(rating),
+    title: "★ " + rating + "–" + rating + ".9 — " + plural(count, "film"),
+  })).slice(1);                       /* a 0.x community rating is noise */
+  columnChart($("ratings"), rows,
+    { showLabel: () => true, height: 120, legend: false });
+  if (DATA.ratings.unrated) {
+    $("ratings").append(el("p", { class: "empty" },
+      plural(DATA.ratings.unrated, "watched film") + " carry no rating."));
+  }
+}
+
+/* ---------- tables ---------- */
+
+function table(columns, rows) {
+  const node = el("table");
+  const head = el("tr");
+  columns.forEach((column) =>
+    head.append(el("th", column.num ? { class: "num" } : {}, column.label)));
+  const thead = el("thead");
+  thead.append(head);
+  node.append(thead);
+  const body = el("tbody");
+  rows.forEach((row) => {
+    const tr = el("tr");
+    columns.forEach((column) => {
+      const cell = el("td", column.num ? { class: "num" } : {});
+      const value = column.cell(row);
+      if (value instanceof Node) cell.append(value);
+      else cell.textContent = value;
+      tr.append(cell);
+    });
+    body.append(tr);
+  });
+  node.append(body);
+  return node;
+}
+
+function tags(list) {
+  const span = el("span");
+  (list || []).slice(0, 2).forEach((name) =>
+    span.append(el("span", { class: "tag" }, name)));
+  return span;
+}
+
+function renderShows() {
+  const host = $("shows");
+  host.textContent = "";
+  if (!DATA.top_shows.length) {
+    host.append(el("p", { class: "empty" }, "No episodes played yet."));
+    return;
+  }
+  host.append(table([
+    { label: "Show", cell: (row) => row.show },
+    { label: "Genre", cell: (row) => tags(row.genres) },
+    { label: "Episodes", num: true, cell: (row) => num(row.episodes) },
+    { label: "Last", cell: (row) => fmtDay(row.last_played) },
+  ], DATA.top_shows));
+}
+
+function renderRewatches() {
+  const host = $("rewatches");
+  host.textContent = "";
+  const rows = (DATA.playlog && DATA.playlog.rewatches) || [];
+  if (!rows.length) {
+    host.append(el("p", { class: "empty" },
+      "No rewatches in the play log yet. The log starts recording sittings "
+      + "from when this version was installed, or from an imported file."));
+    return;
+  }
+  host.append(table([
+    { label: "Title", cell: (row) => row.media === "episode" && row.show
+        ? row.show + " · " + row.title : row.title },
+    { label: "Sittings", num: true, cell: (row) => num(row.sessions) },
+    { label: "First", cell: (row) => fmtDay(row.first) },
+    { label: "Latest", cell: (row) => fmtDay(row.last) },
+  ], rows));
+}
+
+function renderRecent() {
+  const host = $("recent");
+  host.textContent = "";
+  if (!DATA.recent.length) {
+    host.append(el("p", { class: "empty" }, "Nothing played yet."));
+    return;
+  }
+  host.append(table([
+    { label: "Watched", cell: (row) => fmtStamp(row.played) },
+    { label: "Title", cell: (row) => row.type === "episode"
+        ? row.show + " " + row.code + " · " + row.name
+        : row.name + (row.year ? " (" + row.year + ")" : "") },
+    { label: "Genre", cell: (row) => tags(row.genres) },
+    { label: "★", num: true,
+      cell: (row) => (row.rating ? row.rating.toFixed(1) : "–")
+        + (row.favourite ? " ♥" : "") },
+  ], DATA.recent));
+}
+
+/* ---------- trend (history) ---------- */
+
+function renderTrend() {
+  const host = $("trend");
+  host.textContent = "";
+  const totals = (HISTORY && HISTORY.totals) || [];
+  const dated = totals.filter((row) => row.movies_delta !== null);
+  if (dated.length < 2) {
+    host.append(el("p", { class: "empty" },
+      "Not enough history yet — the chart needs at least three daily "
+      + "snapshots. One is taken each day the dashboard or the daily send "
+      + "runs, so check back in a few days."));
+    return;
+  }
+  const rows = dated.map((row) => ({
+    a: row.movies_delta, b: row.episodes_delta,
+    label: row.day.slice(5),
+    title: fmtDay(row.day) + " — " + plural(row.movies_delta, "new film") + ", "
+      + plural(row.episodes_delta, "new episode"),
+  }));
+  const caption = el("p", { class: "hint" },
+    "Newly watched titles per day, measured by comparing each snapshot with "
+    + "the day before.");
+  host.append(caption);
+  const chart = el("div");
+  host.append(chart);
+  columnChart(chart, rows, {
+    showLabel: (i) => i % Math.max(1, Math.round(rows.length / 8)) === 0,
+    height: 140,
+  });
+  renderGenreDrift(host);
+}
+
+function renderGenreDrift(host) {
+  const drift = (HISTORY && HISTORY.genres) || { days: [], genres: [] };
+  if (drift.days.length < 3 || !drift.genres.length) return;
+  host.append(el("h2", {}, "Genre mix over time"));
+  host.append(el("p", { class: "hint" },
+    "Share of watched films carrying each genre, all-time, as it has moved."));
+
+  const width = 640, height = 190, pad = { l: 34, r: 8, t: 10, b: 20 };
+  const svg = svgEl("svg", {
+    viewBox: "0 0 " + width + " " + height,
+    width: "100%", height: height,
+    preserveAspectRatio: "none",
+  });
+  const max = Math.max(10, ...drift.genres.flatMap((g) => g.percent));
+  const x = (index) => pad.l + index * (width - pad.l - pad.r)
+    / Math.max(1, drift.days.length - 1);
+  const y = (value) => height - pad.b - (value / max)
+    * (height - pad.t - pad.b);
+
+  [0, max / 2, max].forEach((value) => {
+    svg.append(svgEl("line", {
+      x1: pad.l, x2: width - pad.r, y1: y(value), y2: y(value),
+      stroke: "var(--line)", "stroke-width": 1,
+    }));
+    const label = svgEl("text", {
+      x: 0, y: y(value) + 3, "font-size": 10, fill: "var(--ink-dim)",
+    });
+    label.textContent = Math.round(value) + "%";
+    svg.append(label);
+  });
+
+  const palette = ["#7c5cff", "#35c2a5", "#ffa94d", "#ff6b9d",
+                   "#4dabf7", "#f4d03f", "#a0e57c", "#c78bff"];
+  const legend = el("div", { class: "legend" });
+  drift.genres.forEach((genre, index) => {
+    const colour = palette[index % palette.length];
+    const points = genre.percent.map((value, step) =>
+      x(step) + "," + y(value)).join(" ");
+    svg.append(svgEl("polyline", {
+      points: points, fill: "none", stroke: colour,
+      "stroke-width": 2, "stroke-linejoin": "round",
+      "vector-effect": "non-scaling-stroke",
+    }));
+    legend.append(legendSwatch(colour, genre.genre));
+  });
+
+  const first = svgEl("text", {
+    x: pad.l, y: height - 6, "font-size": 10, fill: "var(--ink-dim)",
+  });
+  first.textContent = fmtDay(drift.days[0]);
+  const last = svgEl("text", {
+    x: width - pad.r, y: height - 6, "font-size": 10,
+    fill: "var(--ink-dim)", "text-anchor": "end",
+  });
+  last.textContent = fmtDay(drift.days[drift.days.length - 1]);
+  svg.append(first, last);
+
+  host.append(svg, legend);
+}
+
+/* ---------- load ---------- */
+
+function showError(message) {
+  $("error").textContent = message;
+  $("error").style.display = "block";
+  $("loading").style.display = "none";
+}
+
+async function load(force) {
+  const refresh = $("refresh");
+  refresh.disabled = true;
+  refresh.textContent = force ? "Refreshing…" : "Refresh";
+  try {
+    const response = await fetch("/api/data" + (force ? "?refresh=1" : ""),
+                                 { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || ("HTTP " + response.status));
+    DATA = payload;
+    $("error").style.display = "none";
+    $("loading").style.display = "none";
+    $("dash").style.display = "block";
+    renderStamp();
+    renderCards();
+    renderHeatmap();
+    renderHours();
+    renderWeekdays();
+    renderGenres();
+    renderRecentDays();
+    renderRatings();
+    renderShows();
+    renderRecent();
+    renderRewatches();
+    habitHints();
+  } catch (err) {
+    showError("Could not load the stats.\n" + err.message);
+  } finally {
+    refresh.disabled = false;
+    refresh.textContent = "Refresh";
+  }
+  try {
+    const response = await fetch("/api/history", { cache: "no-store" });
+    if (response.ok) {
+      HISTORY = await response.json();
+      if (DATA) renderTrend();
+    }
+  } catch (err) {
+    /* History is a bonus; a dashboard without it is still the dashboard. */
+  }
+}
+
+/* ---------- import ---------- */
+
+let STAGED = null;
+
+async function api(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || ("HTTP " + response.status));
+  return payload;
+}
+
+async function stageFile() {
+  const input = $("importfile");
+  if (!input.files.length) {
+    $("staging").textContent = "";
+    $("staging").append(el("p", { class: "warn" }, "Choose a file first."));
+    return;
+  }
+  const file = input.files[0];
+  const btn = $("stagebtn");
+  btn.disabled = true; btn.textContent = "Reading\u2026";
+  try {
+    const response = await fetch("/api/import/stage", {
+      method: "POST",
+      headers: { "X-Filename": file.name,
+                 "Content-Type": "application/octet-stream" },
+      body: file,
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || ("HTTP " + response.status));
+    STAGED = payload;
+    renderStaging();
+  } catch (err) {
+    $("staging").textContent = "";
+    $("staging").append(el("p", { class: "warn" },
+      "Could not read the file: " + err.message));
+  } finally {
+    btn.disabled = false; btn.textContent = "Load and review";
+  }
+}
+
+function fact(label, value) {
+  const span = el("span");
+  span.append(el("b", {}, String(value)), document.createTextNode(" " + label));
+  return span;
+}
+
+function renderStaging() {
+  const host = $("staging");
+  host.textContent = "";
+  if (!STAGED) return;
+  const s = STAGED;
+  const box = el("div", { class: "stagebox" });
+  box.append(el("h3", {}, s.filename + " \u2014 recognised as " + s.format));
+
+  const facts = el("div", { class: "facts" });
+  facts.append(
+    fact("plays (" + s.movies + " films, " + s.episodes + " episodes)",
+         s.sessions.toLocaleString()),
+    fact("", s.date_from + " \u2192 " + s.date_to));
+  if (s.dateonly) facts.append(fact("without clock times", s.dateonly));
+  if (s.below_threshold) {
+    facts.append(fact("too short to count (will be skipped)",
+                      s.below_threshold));
+  }
+  box.append(facts);
+
+  const compareLine = el("div", { class: "facts" });
+  compareLine.append(
+    fact("already in the log", s.compare.duplicates.toLocaleString()),
+    fact("new", s.compare.new_sessions.toLocaleString()),
+    fact("days where both have data", s.compare.overlap_days));
+  box.append(el("p", { class: "hint" },
+    "Compared with the " + s.compare.existing_sessions.toLocaleString()
+    + " sessions already logged:"));
+  box.append(compareLine);
+
+  s.warnings.forEach((w) => box.append(el("p", { class: "warn" }, w)));
+
+  if (s.devices.length > 1 || (s.devices[0] && s.devices[0][0] !== "unknown")) {
+    box.append(el("p", { class: "hint" }, "Devices in the file: "
+      + s.devices.map(([name, count]) => name + " (" + count + ")").join(", ")));
+  }
+
+  if (s.sample.length) {
+    const sampleTable = table([
+      { label: "Started", cell: (r) => r.started_at },
+      { label: "Title", cell: (r) => (r.show ? r.show + " \u00b7 " : "") + r.title },
+      { label: "Type", cell: (r) => r.media },
+      { label: "Device", cell: (r) => r.device || "\u2013" },
+    ], s.sample);
+    const wrap = el("div", { class: "scroll" });
+    wrap.style.maxHeight = "200px";
+    wrap.append(sampleTable);
+    box.append(el("p", { class: "hint" }, "First rows:"), wrap);
+  }
+
+  /* Options */
+  const opts = el("div", { class: "optrow" });
+  const mkRadio = (value, text, checked) => {
+    const label = el("label");
+    const radio = el("input", { type: "radio", name: "importmode", value });
+    radio.checked = checked;
+    radio.addEventListener("change", renderReplaceOpts);
+    label.append(radio, document.createTextNode(text));
+    return label;
+  };
+  opts.append(
+    mkRadio("merge", "Merge \u2014 add only what is new ("
+      + s.compare.new_sessions.toLocaleString() + " plays), touch nothing", true),
+    mkRadio("replace", "Replace \u2014 this file wins for "
+      + s.date_from + " \u2192 " + s.date_to));
+  box.append(opts);
+
+  const replaceOpts = el("div", { class: "optrow", id: "replaceopts" });
+  replaceOpts.style.display = "none";
+  const mkCheck = (value, text, checked) => {
+    const label = el("label");
+    const check = el("input", { type: "checkbox", value });
+    check.checked = checked;
+    check.className = "replacesrc";
+    label.append(check, document.createTextNode(text));
+    return label;
+  };
+  replaceOpts.append(
+    el("span", {}, "Delete first:"),
+    mkCheck("import", "previously imported sessions in that range", true),
+    mkCheck("kodi", "this box's own logged sessions in that range", false),
+    el("span", { class: "warn" }, "Deleting cannot be undone."));
+  box.append(replaceOpts);
+
+  const actions = el("div", { class: "optrow" });
+  const commitBtn = el("button", { class: "action primary" }, "Import");
+  commitBtn.addEventListener("click", commitImport);
+  const discardBtn = el("button", { class: "action" }, "Discard");
+  discardBtn.addEventListener("click", discardImport);
+  actions.append(commitBtn, discardBtn);
+  box.append(actions);
+
+  host.append(box);
+}
+
+function renderReplaceOpts() {
+  const mode = document.querySelector('input[name="importmode"]:checked');
+  $("replaceopts").style.display =
+    mode && mode.value === "replace" ? "flex" : "none";
+}
+
+async function commitImport() {
+  if (!STAGED) return;
+  const mode = document.querySelector('input[name="importmode"]:checked').value;
+  const sources = [...document.querySelectorAll(".replacesrc")]
+    .filter((c) => c.checked).map((c) => c.value);
+  if (mode === "replace" && sources.includes("kodi")
+      && !confirm("Also delete this box's own logged sessions between "
+                  + STAGED.date_from + " and " + STAGED.date_to
+                  + "? This cannot be undone.")) {
+    return;
+  }
+  const host = $("staging");
+  try {
+    const result = await api("/api/import/commit",
+      { token: STAGED.token, mode, replace_sources: sources });
+    STAGED = null;
+    host.textContent = "";
+    host.append(el("p", { class: "hint" },
+      "Imported " + result.inserted.toLocaleString() + " plays"
+      + (result.skipped ? ", skipped " + result.skipped + " duplicates" : "")
+      + (result.dropped ? ", dropped " + result.dropped
+         + " below the minimum length" : "")
+      + (result.replaced ? ", removed " + result.replaced + " replaced rows" : "")
+      + ". The charts below have been refreshed."));
+    $("importfile").value = "";
+    await load(true);
+    await loadBatches();
+  } catch (err) {
+    host.append(el("p", { class: "warn" }, "Import failed: " + err.message));
+  }
+}
+
+async function discardImport() {
+  if (STAGED) {
+    try { await api("/api/import/discard", { token: STAGED.token }); }
+    catch (err) { /* forgetting it locally is enough */ }
+  }
+  STAGED = null;
+  $("staging").textContent = "";
+  $("importfile").value = "";
+}
+
+async function loadBatches() {
+  const host = $("batches");
+  try {
+    const response = await fetch("/api/import/batches", { cache: "no-store" });
+    if (!response.ok) return;
+    const rows = (await response.json()).batches;
+    host.textContent = "";
+    if (!rows.length) return;
+    host.append(el("p", { class: "hint" }, "Previous imports:"));
+    host.append(table([
+      { label: "When", cell: (r) => fmtStamp(r.imported_at) },
+      { label: "File", cell: (r) => r.filename + " (" + r.format + ")" },
+      { label: "Plays", num: true, cell: (r) => num(r.sessions) },
+      { label: "Covers", cell: (r) => r.from ? r.from + " \u2192 " + r.to : "\u2013" },
+      { label: "", cell: (r) => {
+          const btn = el("button", { class: "action danger" }, "Remove");
+          btn.addEventListener("click", async () => {
+            if (!confirm("Remove this import and its " + r.sessions
+                         + " plays?")) return;
+            await api("/api/import/delete", { batch_id: r.id });
+            await load(true);
+            await loadBatches();
+          });
+          return btn;
+        } },
+    ], rows));
+  } catch (err) { /* the list is informational */ }
+}
+
+$("stagebtn").addEventListener("click", stageFile);
+
+function renderStamp() {
+  if (!DATA) return;
+  $("ver").textContent = DATA.addon_version ? "v" + DATA.addon_version : "";
+  if (DATA.source === "mirror") {
+    $("stamp").textContent = "Jellyfin unreachable — showing the addon's "
+      + "own copy, last synced " + (DATA.mirror.synced_at
+        ? fmtStamp(DATA.mirror.synced_at) : "never");
+  } else {
+    $("stamp").textContent = "Jellyfin " + DATA.server + " · read "
+      + fmtStamp(DATA.generated_at)
+      + (DATA.mirror && DATA.mirror.items
+         ? " · " + DATA.mirror.items.toLocaleString()
+           + " items mirrored locally" : "");
+  }
+}
+
+/* ---------- settings ---------- */
+
+function renderSettings() {
+  const groups = [
+    ["pref-dateformat", DATE_FORMATS, "dateFormat"],
+    ["pref-clock", CLOCKS, "clock"],
+    ["pref-recmovies", REC_MODES, "recMovies"],
+    ["pref-rectv", REC_MODES, "recTv"],
+  ];
+  groups.forEach(([hostId, options, key]) => {
+    const host = $(hostId);
+    host.textContent = "";
+    Object.keys(options).forEach((value) => {
+      host.append(button(options[value].label, PREFS[key] === value, () => {
+        PREFS[key] = value;
+        savePrefs();
+        renderSettings();
+        applyPrefs();
+      }));
+    });
+  });
+}
+
+function applyPrefs() {
+  /* Re-render everything that shows a date or time. Cheap: it is all
+     client-side formatting of data already in memory. */
+  if (DATA) {
+    renderStamp();
+    renderHeatmap();
+    renderRecentDays();
+    renderShows();
+    renderRecent();
+    renderRewatches();
+    renderDataFacts();
+  }
+  if (HISTORY && DATA) renderTrend();
+  /* A changed seen/new choice makes every open suggestion list wrong. */
+  if (MEDIA_STATS.movies) loadRecs("movies");
+  if (MEDIA_STATS.tv) loadRecs("tv");
+  if (CURRENT_ITEM) loadSimilar(CURRENT_ITEM);
+}
+
+/* ---------- media pages, recommendations, similar ---------- */
+
+const MEDIA_STATS = { movies: null, tv: null };
+let CURRENT_ITEM = null;      /* {media, id, name} for the open item page */
+
+async function loadMediaPage(media) {
+  const host = media === "movies" ? "movie" : "tv";
+  if (!MEDIA_STATS[media]) {
+    try {
+      const response = await fetch("/api/stats?media=" + media,
+                                   { cache: "no-store" });
+      const stats = await response.json();
+      if (!response.ok) throw new Error(stats.error || response.status);
+      MEDIA_STATS[media] = stats;
+    } catch (err) {
+      $(host + "-cards").textContent = "";
+      $(host + "-cards").append(el("p", { class: "empty" },
+        "Could not load stats: " + err.message));
+      return;
+    }
+  }
+  if (media === "movies") renderMoviePage(); else renderTvPage();
+}
+
+function cardGrid(hostId, cards) {
+  const host = $(hostId);
+  host.textContent = "";
+  cards.forEach((card) => {
+    const box = el("div", { class: "card" });
+    box.append(el("div", { class: "k" }, card.k),
+               el("div", { class: "v" }, card.v),
+               el("div", { class: "s" }, card.s || ""));
+    host.append(box);
+  });
+}
+
+function renderMoviePage() {
+  const stats = MEDIA_STATS.movies;
+  cardGrid("movie-cards", [
+    { k: "Films watched", v: num(stats.total), s: "in the mirror" },
+    { k: "Total plays", v: num(stats.plays), s: "including rewatches" },
+    { k: "Average rating", v: stats.avg_rating
+        ? "★ " + stats.avg_rating.toFixed(1) : "–", s: "of what you watch" },
+    { k: "Favourites", v: num(stats.favourites_count),
+      s: "marked on Jellyfin" },
+  ]);
+
+  const rows = stats.decades.map((row) => ({
+    a: row.count, b: 0, label: String(row.decade).slice(2) + "s",
+    title: row.decade + "s — " + plural(row.count, "film"),
+  }));
+  if (rows.length) {
+    columnChart($("movie-decades"), rows,
+                { showLabel: () => true, height: 130, legend: false });
+  } else {
+    $("movie-decades").textContent = "";
+    $("movie-decades").append(el("p", { class: "empty" }, "No years known."));
+  }
+
+  const replayed = $("movie-replayed");
+  replayed.textContent = "";
+  if (stats.most_played.length) {
+    replayed.append(table([
+      { label: "Film", cell: (row) => linkToMovie(row) },
+      { label: "Plays", num: true, cell: (row) => num(row.plays) },
+      { label: "★", num: true,
+        cell: (row) => row.rating ? row.rating.toFixed(1) : "–" },
+    ], stats.most_played));
+  } else {
+    replayed.append(el("p", { class: "empty" },
+      "Nothing has been played more than once yet."));
+  }
+
+  const best = $("movie-best");
+  best.textContent = "";
+  best.append(table([
+    { label: "Film", cell: (row) => linkToMovie(row) },
+    { label: "★", num: true,
+      cell: (row) => row.rating ? row.rating.toFixed(1) : "–" },
+  ], stats.best_rated));
+}
+
+function renderTvPage() {
+  const stats = MEDIA_STATS.tv;
+  cardGrid("tv-cards", [
+    { k: "Shows watched", v: num(stats.shows), s: "with at least one episode" },
+    { k: "Episodes", v: num(stats.episodes), s: "in the mirror" },
+    { k: "Total plays", v: num(stats.plays), s: "including rewatches" },
+    { k: "Average rating", v: stats.avg_rating
+        ? "★ " + stats.avg_rating.toFixed(1) : "–", s: "per episode" },
+  ]);
+
+  const top = $("tv-top");
+  top.textContent = "";
+  top.append(table([
+    { label: "Show", cell: (row) => linkToShow(row.name) },
+    { label: "Episodes", num: true, cell: (row) => num(row.episodes) },
+    { label: "Seasons", num: true, cell: (row) => num(row.seasons) },
+    { label: "Last", cell: (row) => fmtDay(row.last_played) },
+  ], stats.top_shows));
+
+  const best = $("tv-best");
+  best.textContent = "";
+  if (stats.best_rated.length) {
+    best.append(table([
+      { label: "Show", cell: (row) => linkToShow(row.name) },
+      { label: "★", num: true, cell: (row) => row.avg_rating.toFixed(2) },
+      { label: "Episodes", num: true, cell: (row) => num(row.episodes) },
+    ], stats.best_rated));
+  } else {
+    best.append(el("p", { class: "empty" },
+      "No show has 3 or more rated episodes watched yet."));
+  }
+}
+
+function linkToMovie(row) {
+  const link = el("button", { class: "backlink", type: "button" },
+                  row.name + (row.year ? " (" + row.year + ")" : ""));
+  link.style.marginBottom = "0";
+  link.addEventListener("click", () => openMovie(row.id));
+  return link;
+}
+
+function linkToShow(name) {
+  const link = el("button", { class: "backlink", type: "button" }, name);
+  link.style.marginBottom = "0";
+  link.addEventListener("click", () => openShow(name));
+  return link;
+}
+
+/* Suggestion lists: recommendations (a whole medium) and similar (one
+   title) share their rendering and their seen/new setting. */
+function renderSuggestions(host, payload, emptyText) {
+  host.textContent = "";
+  if (payload.offline) {
+    host.append(el("p", { class: "hint" },
+      "Jellyfin is unreachable, so these come from titles already in the "
+      + "mirror."));
+  }
+  if (!payload.items.length) {
+    host.append(el("p", { class: "empty" }, emptyText));
+    return;
+  }
+  const grid = el("div", { class: "grid" });
+  payload.items.forEach((item) => {
+    const card = el("button", { class: "sugg", type: "button" });
+    card.append(el("div", { class: "t" }, item.name));
+    card.append(el("div", { class: "m" },
+      [item.year, item.genres.slice(0, 2).join(", "),
+       item.rating ? "★ " + item.rating.toFixed(1) : null]
+        .filter(Boolean).join(" · ")));
+    if (item.seen) card.append(el("span", { class: "seen" }, "seen"));
+    /* Everything is clickable: an unwatched title has no mirror row, but
+       the item page falls back to the catalog for it. */
+    card.addEventListener("click", () => {
+      if (payload.media === "tv") openShow(item.name);
+      else openMovie(item.id);
+    });
+    grid.append(card);
+  });
+  host.append(grid);
+}
+
+function recTabs(media) {
+  const host = $((media === "movies" ? "movie" : "tv") + "-recs-tabs");
+  host.textContent = "";
+  const key = media === "tv" ? "recTv" : "recMovies";
+  Object.keys(REC_MODES).forEach((value) => {
+    host.append(button(REC_MODES[value].label, PREFS[key] === value, () => {
+      PREFS[key] = value;
+      savePrefs();
+      renderSettings();
+      recTabs(media);
+      RECS[media].offset = 0;   /* a different candidate set, so page 1 */
+      loadRecs(media);
+      if (CURRENT_ITEM) loadSimilar(CURRENT_ITEM);
+    }));
+  });
+}
+
+/* Browsing state per medium: which genres are ticked and how far down the
+   ranked list we are. Deliberately not persisted - a filter is something
+   you are doing now, not a preference. */
+const RECS = {
+  movies: { genres: [], offset: 0, pageSize: 20 },
+  tv: { genres: [], offset: 0, pageSize: 20 },
+};
+const GENRE_CHIPS_SHOWN = 12;
+
+function renderGenreFilter(media, payload) {
+  const prefix = media === "movies" ? "movie" : "tv";
+  const host = $(prefix + "-recs-genres");
+  const state = RECS[media];
+  host.textContent = "";
+  const available = payload.genres_available || [];
+  if (!available.length) return;
+
+  const selected = new Set(state.genres.map((g) => g.toLowerCase()));
+  /* Show the common genres, plus any ticked one that has fallen outside
+     the top slice - a filter you cannot see is a filter you cannot undo. */
+  let shown = available.slice(0, state.showAll ? available.length
+                                               : GENRE_CHIPS_SHOWN);
+  const shownNames = new Set(shown.map((g) => g.genre.toLowerCase()));
+  available.forEach((entry) => {
+    if (selected.has(entry.genre.toLowerCase())
+        && !shownNames.has(entry.genre.toLowerCase())) {
+      shown = shown.concat([entry]);
+    }
+  });
+
+  shown.forEach((entry) => {
+    const on = selected.has(entry.genre.toLowerCase());
+    const chip = el("button", { type: "button" },
+                    entry.genre + " (" + num(entry.count) + ")");
+    chip.setAttribute("aria-pressed", on ? "true" : "false");
+    chip.addEventListener("click", () => {
+      state.genres = on
+        ? state.genres.filter((g) => g.toLowerCase()
+            !== entry.genre.toLowerCase())
+        : state.genres.concat([entry.genre]);
+      state.offset = 0;          /* a new filter starts at the top again */
+      loadRecs(media);
+    });
+    host.append(chip);
+  });
+
+  if (available.length > GENRE_CHIPS_SHOWN && !state.showAll) {
+    const more = el("button", { type: "button", class: "more" },
+                    "+" + (available.length - GENRE_CHIPS_SHOWN) + " more");
+    more.addEventListener("click", () => {
+      state.showAll = true;
+      renderGenreFilter(media, payload);
+    });
+    host.append(more);
+  }
+  if (state.genres.length) {
+    const clear = el("button", { type: "button", class: "clearall" },
+                     "clear filter");
+    clear.addEventListener("click", () => {
+      state.genres = [];
+      state.offset = 0;
+      loadRecs(media);
+    });
+    host.append(clear);
+  }
+}
+
+function renderPager(media, payload) {
+  const prefix = media === "movies" ? "movie" : "tv";
+  const host = $(prefix + "-recs-pager");
+  const state = RECS[media];
+  host.textContent = "";
+  const total = payload.total || 0;
+  if (!total) return;
+  const from = payload.offset + 1;
+  const to = Math.min(payload.offset + payload.limit, total);
+
+  host.append(el("span", { class: "range" },
+                 "Showing " + num(from) + "–" + num(to) + " of " + num(total)
+                 + (state.genres.length
+                    ? " in " + state.genres.join(", ") : "")));
+
+  const back = el("button", { type: "button" }, "‹ Back");
+  back.disabled = payload.offset <= 0;
+  back.addEventListener("click", () => {
+    state.offset = Math.max(0, state.offset - state.pageSize);
+    loadRecs(media);
+  });
+  const forward = el("button", { type: "button" }, "Forward ›");
+  forward.disabled = to >= total;
+  forward.addEventListener("click", () => {
+    state.offset = state.offset + state.pageSize;
+    loadRecs(media);
+  });
+  host.append(back, forward);
+}
+
+async function loadRecs(media) {
+  const prefix = media === "movies" ? "movie" : "tv";
+  const host = $(prefix + "-recs");
+  recTabs(media);
+  $(prefix + "-recs-hint").textContent = PREFS[media === "tv" ? "recTv"
+    : "recMovies"] === "both"
+    ? "Ranked by how well each matches the genres you watch most, including "
+      + "things you have already seen."
+    : "Ranked by how well each matches the genres you watch most, from "
+      + "titles on your server you have not watched.";
+  host.textContent = "";
+  host.append(el("p", { class: "empty" }, "Working out what you might like…"));
+  try {
+    const state = RECS[media];
+    const query = ["media=" + media, "seen=" + seenFlag(media),
+                   "offset=" + state.offset, "limit=" + state.pageSize]
+      .concat(state.genres.map((g) => "genre=" + encodeURIComponent(g)));
+    const response = await fetch("/api/recommend?" + query.join("&"),
+                                 { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || response.status);
+    payload.media = media;
+    renderGenreFilter(media, payload);
+    renderSuggestions(host, payload, state.genres.length
+      ? "Nothing recommendable in " + state.genres.join(" or ")
+        + " with the current setting."
+      : "Nothing to suggest yet — watch a few more titles so there is a "
+        + "taste profile to match against.");
+    renderPager(media, payload);
+    if (media === "movies" && payload.profile) renderProfile(payload.profile);
+  } catch (err) {
+    host.textContent = "";
+    host.append(el("p", { class: "empty" },
+      "Could not build recommendations: " + err.message));
+    $(prefix + "-recs-pager").textContent = "";
+  }
+}
+
+async function loadSimilar(ref) {
+  const host = $("similar-" + ref.media);
+  if (!host) return;
+  host.textContent = "";
+  host.append(el("p", { class: "empty" }, "Looking for similar titles…"));
+  const params = ["media=" + ref.media, "seen=" + seenFlag(ref.media)];
+  if (ref.id) params.push("id=" + encodeURIComponent(ref.id));
+  if (ref.name) params.push("name=" + encodeURIComponent(ref.name));
+  try {
+    const response = await fetch("/api/similar?" + params.join("&"),
+                                 { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || response.status);
+    payload.media = ref.media;
+    renderSuggestions(host, payload,
+      "Nothing similar enough to suggest with the current setting.");
+  } catch (err) {
+    host.textContent = "";
+    host.append(el("p", { class: "empty" },
+      "Could not look for similar titles: " + err.message));
+  }
+}
+
+function renderProfile(profile) {
+  const host = $("rec-profile");
+  if (!host) return;
+  host.textContent = "";
+  if (!profile.length) return;
+  host.append(el("p", { class: "hint" },
+    "Your film taste profile, the weights actually used:"));
+  const bars = el("div", { class: "barlist" });
+  const max = profile[0][1] || 1;
+  profile.forEach(([genre, weight]) => {
+    const bar = el("div", { class: "bar" });
+    const track = el("div", { class: "track" });
+    const fill = el("div", { class: "fill" });
+    fill.style.width = (100 * weight / max) + "%";
+    track.append(fill);
+    bar.append(el("div", { class: "name" },
+                  genre.replace(/\b\w/g, (c) => c.toUpperCase())),
+               track,
+               el("div", { class: "val" }, (weight * 100).toFixed(0) + "%"));
+    bars.append(bar);
+  });
+  host.append(bars);
+}
+
+/* ---------- rating what you have watched ---------- */
+
+let RATE_MEDIA = "movies";
+let RATE_SCOPE = "mine";
+let RATE_CAPS = null;
+
+const RATE_SCOPES = {
+  mine: {
+    label: "Not rated by me",
+    hint: "Everything you have watched and not given a score yourself, "
+      + "whatever rating the internet has for it. Newest watch first, "
+      + "because last night is still fresh.",
+  },
+  missing: {
+    label: "No rating anywhere",
+    hint: "Only titles with no community rating on Jellyfin either - the "
+      + "gaps in the metadata, usually obscure or home-made releases.",
+  },
+};
+
+async function loadRateQueue(media, scope) {
+  RATE_MEDIA = media;
+  if (scope) RATE_SCOPE = scope;
+  const list = $("rate-list");
+  list.textContent = "";
+  list.append(el("p", { class: "empty" }, "Loading…"));
+  let payload;
+  try {
+    const response = await fetch("/api/unrated?media=" + media
+                                 + "&scope=" + RATE_SCOPE,
+                                 { cache: "no-store" });
+    payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || response.status);
+  } catch (err) {
+    list.textContent = "";
+    list.append(el("p", { class: "empty" },
+      "Could not load the queue: " + err.message));
+    return;
+  }
+  RATE_CAPS = payload.capabilities;
+  $("rate-note").textContent = payload.capabilities.note;
+  renderRateSummary(payload.summary);
+  renderRateTabs(payload.summary);
+  renderRateScope(payload.summary);
+  $("rate-heading").textContent = media === "movies" ? "Films" : "Episodes";
+  $("rate-scope-hint").textContent = RATE_SCOPES[RATE_SCOPE].hint;
+
+  list.textContent = "";
+  if (!payload.items.length) {
+    list.append(el("p", { class: "empty" }, RATE_SCOPE === "mine"
+      ? "You have scored everything you have watched."
+      : "Everything you have watched carries a community rating."));
+    return;
+  }
+  payload.items.forEach((item) => list.append(rateRow(item)));
+  if (payload.total > payload.items.length) {
+    list.append(el("p", { class: "hint" },
+      "Showing the first " + payload.items.length + " of "
+      + num(payload.total) + ". Rate these and reload for more."));
+  }
+}
+
+function renderRateSummary(summary) {
+  const host = $("rate-summary");
+  host.textContent = "";
+  [[num(summary.rated_by_you), "rated by you so far"],
+   [num(summary.mine.movies), "films still to rate"],
+   [num(summary.mine.episodes), "episodes still to rate"],
+   summary.sync_failures ? [num(summary.sync_failures), "failed to sync"]
+     : null].filter(Boolean).forEach(([value, label]) => {
+    const span = el("span");
+    span.append(el("b", {}, value), document.createTextNode(" " + label));
+    host.append(span);
+  });
+}
+
+function renderRateTabs(summary) {
+  const host = $("rate-tabs");
+  host.textContent = "";
+  const counts = summary[RATE_SCOPE] || summary.mine;
+  [["movies", "Films (" + num(counts.movies) + ")"],
+   ["tv", "Episodes (" + num(counts.episodes) + ")"]]
+    .forEach(([value, label]) => {
+      host.append(button(label, RATE_MEDIA === value,
+                         () => loadRateQueue(value)));
+    });
+}
+
+function renderRateScope(summary) {
+  const host = $("rate-scope");
+  host.textContent = "";
+  Object.keys(RATE_SCOPES).forEach((value) => {
+    const counts = summary[value] || { movies: 0, episodes: 0 };
+    const total = RATE_MEDIA === "movies" ? counts.movies : counts.episodes;
+    host.append(button(RATE_SCOPES[value].label + " (" + num(total) + ")",
+                       RATE_SCOPE === value,
+                       () => loadRateQueue(RATE_MEDIA, value)));
+  });
+}
+
+function rateRow(item) {
+  const row = el("div", { class: "rateitem" });
+  const left = el("div");
+  const title = item.media === "episode"
+    ? (item.show || "?") + " S" + String(item.season || 0).padStart(2, "0")
+      + "E" + String(item.episode || 0).padStart(2, "0") + " · " + item.name
+    : item.name + (item.year ? " (" + item.year + ")" : "");
+  const what = el("div", { class: "what" });
+  const link = el("button", { type: "button",
+                              title: "Open this title's page" }, title);
+  link.addEventListener("click", () => {
+    if (item.media === "episode") openShow(item.show);
+    else openMovie(item.id);
+  });
+  what.append(link);
+  left.append(what);
+  left.append(el("div", { class: "meta" },
+    [item.genres.slice(0, 2).join(", "),
+     item.last_played ? "watched " + fmtDay(item.last_played) : null,
+     item.plays > 1 ? plural(item.plays, "play") : null,
+     item.community ? "community ★ " + item.community.toFixed(1)
+                    : "no community rating"]
+      .filter(Boolean).join(" · ")));
+  const state = el("div", { class: "ratestate" });
+  left.append(state);
+  row.append(left);
+
+  row.append(ratingControl(item, row, state));
+  return row;
+}
+
+/* A 1-to-10 slider with a step arrow either side and the score beside it.
+   Dragging fires input events continuously, so the number follows the thumb
+   but only a settled value (change, or an arrow press) is saved - otherwise
+   one drag would post ten ratings. */
+function ratingControl(item, row, state, initial) {
+  const control = el("div", { class: "stars" });
+  let score = initial === undefined || initial === null ? null : initial;
+
+  const down = el("button", { type: "button", class: "step",
+                              title: "One lower" }, "\u2039");
+  const slider = el("input", { type: "range", min: "1", max: "10",
+                               step: "1", "aria-label": "Your score" });
+  const up = el("button", { type: "button", class: "step",
+                            title: "One higher" }, "\u203a");
+  const readout = el("div", { class: "score" });
+  const clear = el("button", { type: "button", class: "clear",
+                               title: "Remove your score" }, "clear");
+
+  slider.value = String(score === null ? 5 : score);
+
+  function paint() {
+    readout.textContent = "";
+    if (score === null) {
+      const none = el("span", { class: "none" }, "★ –");
+      readout.append(none);
+    } else {
+      readout.textContent = "★ " + score;
+    }
+    down.disabled = score !== null && score <= 1;
+    up.disabled = score !== null && score >= 10;
+  }
+
+  function setScore(value, save) {
+    score = value === null ? null : Math.max(1, Math.min(10, value));
+    if (score !== null) slider.value = String(score);
+    paint();
+    if (save) submitRating(item, score, row, state);
+  }
+
+  down.addEventListener("click", () =>
+    setScore(score === null ? 5 : score - 1, true));
+  up.addEventListener("click", () =>
+    setScore(score === null ? 5 : score + 1, true));
+  slider.addEventListener("input", () => setScore(+slider.value, false));
+  slider.addEventListener("change", () => setScore(+slider.value, true));
+  clear.addEventListener("click", () => setScore(null, true));
+
+  paint();
+  control.append(down, slider, up, readout, clear);
+  return control;
+}
+
+async function submitRating(item, score, row, state) {
+  state.className = "ratestate";
+  state.textContent = "Saving…";
+  try {
+    const response = await fetch("/api/rate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id, score: score }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || response.status);
+    row.classList.add("done");
+    if (result.synced) {
+      state.textContent = score === null
+        ? "Cleared here and on Jellyfin."
+        : "Saved: " + score + "/10 — " + result.actions.join(", ") + ".";
+    } else {
+      state.className = "ratestate bad";
+      state.textContent = "Saved here, but " + result.state.replace(
+        /^error: /, "");
+    }
+    if (result.summary) {
+      renderRateSummary(result.summary);
+      renderRateTabs(result.summary);
+    }
+  } catch (err) {
+    state.className = "ratestate bad";
+    state.textContent = "Could not save: " + err.message;
+  }
+}
+
+function similarPanel(media) {
+  const panel = el("section", { class: "panel" });
+  panel.append(el("h2", {}, media === "movies" ? "Similar films"
+                                               : "Similar shows"));
+  panel.append(el("p", { class: "hint" },
+    "By shared genres, with a nudge for a similar era and a better rating. "
+    + "Which titles are eligible follows the Recommendations setting."));
+  panel.append(el("div", { id: "similar-" + media }));
+  return panel;
+}
+
+/* ---------- views ---------- */
+
+const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
+               "recommended", "rate"];
+
+function showView(name) {
+  VIEWS.forEach((view) => {
+    $("view-" + view).style.display = view === name ? "block" : "none";
+  });
+  document.querySelectorAll("nav.side button").forEach((btn) => {
+    btn.setAttribute("aria-current",
+      btn.dataset.view === name ? "true" : "false");
+  });
+  window.scrollTo(0, 0);
+}
+
+document.querySelectorAll("nav.side button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    showView(btn.dataset.view);
+    if (btn.dataset.view === "data") renderDataFacts();
+    if (btn.dataset.view === "settings") renderSettings();
+    if (btn.dataset.view === "movies" || btn.dataset.view === "tv") {
+      loadMediaPage(btn.dataset.view);
+    }
+    if (btn.dataset.view === "recommended") {
+      loadRecs("movies");
+      loadRecs("tv");
+    }
+    if (btn.dataset.view === "rate") loadRateQueue(RATE_MEDIA);
+  });
+});
+
+function renderDataFacts() {
+  const host = $("datafacts");
+  host.textContent = "";
+  if (!DATA || !DATA.mirror) return;
+  const facts = [
+    ["Items mirrored", num(DATA.mirror.items)],
+    ["Films", num(DATA.mirror.movies)],
+    ["No longer on Jellyfin", num(DATA.mirror.departed)],
+    ["Last synced", DATA.mirror.synced_at
+      ? fmtStamp(DATA.mirror.synced_at) : "never"],
+  ];
+  facts.forEach(([label, value]) => {
+    const span = el("span");
+    const bold = el("b", {}, value);
+    span.append(bold, document.createTextNode(" " + label.toLowerCase()));
+    host.append(span);
+  });
+}
+
+/* ---------- search ---------- */
+
+let searchTimer = null;
+let searchSeq = 0;
+
+function closeSearch() {
+  $("searchresults").classList.remove("open");
+  $("searchresults").textContent = "";
+}
+
+$("searchbox").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const term = $("searchbox").value.trim();
+  if (term.length < 2) { closeSearch(); return; }
+  searchTimer = setTimeout(() => runSearch(term), 220);
+});
+
+$("searchbox").addEventListener("keydown", (evt) => {
+  if (evt.key === "Escape") { closeSearch(); $("searchbox").blur(); }
+  if (evt.key === "Enter") {
+    const first = $("searchresults").querySelector(".hit");
+    if (first) first.click();
+  }
+});
+
+document.addEventListener("click", (evt) => {
+  if (!evt.target.closest(".search")) closeSearch();
+});
+
+async function runSearch(term) {
+  const seq = ++searchSeq;
+  let hits;
+  try {
+    const response = await fetch("/api/search?q=" + encodeURIComponent(term),
+                                 { cache: "no-store" });
+    hits = await response.json();
+    if (!response.ok) throw new Error(hits.error || response.status);
+  } catch (err) {
+    return;                     /* a failed suggestion is not worth an error */
+  }
+  if (seq !== searchSeq) return;          /* a newer keystroke superseded us */
+  const box = $("searchresults");
+  box.textContent = "";
+  const total = hits.movies.length + hits.shows.length;
+  if (!total) {
+    box.append(el("div", { class: "group" }, "Nothing watched matches that"));
+    box.classList.add("open");
+    return;
+  }
+  if (hits.movies.length) {
+    box.append(el("div", { class: "group" }, "Films"));
+    hits.movies.forEach((movie) => {
+      const hit = el("button", { class: "hit", type: "button" });
+      hit.append(el("div", {}, movie.name
+        + (movie.year ? " (" + movie.year + ")" : "")));
+      hit.append(el("div", { class: "sub" },
+        (movie.last_played ? "last watched "
+          + fmtDay(movie.last_played) : "")
+        + (movie.play_count > 1 ? " · " + movie.play_count + " plays" : "")));
+      hit.addEventListener("click", () => openMovie(movie.id));
+      box.append(hit);
+    });
+  }
+  if (hits.shows.length) {
+    box.append(el("div", { class: "group" }, "TV shows"));
+    hits.shows.forEach((show) => {
+      const hit = el("button", { class: "hit", type: "button" });
+      hit.append(el("div", {}, show.name));
+      hit.append(el("div", { class: "sub" },
+        plural(show.episodes, "episode") + " watched"
+        + (show.last_played ? " · last "
+          + fmtDay(show.last_played) : "")));
+      hit.addEventListener("click", () => openShow(show.name));
+      box.append(hit);
+    });
+  }
+  box.classList.add("open");
+}
+
+/* ---------- item pages ---------- */
+
+function itemShell() {
+  CURRENT_ITEM = null;
+  closeSearch();
+  $("searchbox").value = "";
+  const host = $("view-item");
+  host.textContent = "";
+  const back = el("button", { class: "backlink", type: "button" },
+                  "← Back to overview");
+  back.addEventListener("click", () => showView("overview"));
+  host.append(back);
+  showView("item");
+  return host;
+}
+
+function factsRow(pairs) {
+  const row = el("div", { class: "facts" });
+  pairs.forEach(([value, label]) => {
+    if (value === null || value === undefined || value === "") return;
+    const span = el("span");
+    span.append(el("b", {}, String(value)),
+                document.createTextNode(" " + label));
+    row.append(span);
+  });
+  return row;
+}
+
+function playBar(ref) {
+  const bar = el("div", { class: "playbar" });
+  const say = el("span", { class: "say" });
+
+  function fire(action, btn) {
+    [...bar.querySelectorAll("button")].forEach((b) => { b.disabled = true; });
+    say.className = "say";
+    say.textContent = action === "play" ? "Starting…" : "Queueing…";
+    const body = ref.show ? { action: action, show: ref.show }
+                          : { action: action, id: ref.id };
+    fetch("/api/play", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || response.status);
+      if (result.action === "play") {
+        say.textContent = "Playing " + result.name + " on this box.";
+      } else if (result.action === "queue-started") {
+        say.textContent = "Nothing was playing, so " + result.name
+          + " started.";
+      } else {
+        say.textContent = "Queued " + result.name + " ("
+          + plural(result.status ? result.status.queued : result.queued,
+                   "item") + " in the playlist).";
+      }
+    }).catch((err) => {
+      say.className = "say bad";
+      say.textContent = err.message;
+    }).finally(() => {
+      [...bar.querySelectorAll("button")].forEach((b) => {
+        b.disabled = false;
+      });
+    });
+  }
+
+  const playBtn = el("button", { type: "button", class: "primary" },
+                     ref.show ? "▶ Play next unwatched" : "▶ Play on Kodi");
+  playBtn.addEventListener("click", () => fire("play", playBtn));
+  const queueBtn = el("button", { type: "button" },
+                      ref.show ? "+ Queue next unwatched" : "+ Queue");
+  queueBtn.addEventListener("click", () => fire("queue", queueBtn));
+
+  bar.append(playBtn, queueBtn, say);
+  return bar;
+}
+
+function notWatchedNote(kind) {
+  const panel = el("section", { class: "panel" });
+  panel.append(el("h2", {}, "Not watched yet"));
+  panel.append(el("p", { class: "hint" },
+    "This " + kind + " is on your Jellyfin server but has no watch history, "
+    + "so there are no play statistics for it. It is here because it was "
+    + "recommended or matched a search."));
+  return panel;
+}
+
+function sittingsPanel(sittings) {
+  const panel = el("section", { class: "panel" });
+  panel.append(el("h2", {}, "Sittings"));
+  panel.append(el("p", { class: "hint" },
+    "Individual viewing sessions from the play log — recorded on this box, "
+    + "imported, or detected from Jellyfin date changes."));
+  if (!sittings.length) {
+    panel.append(el("p", { class: "empty" },
+      "No logged sittings yet. The log only starts from when this version "
+      + "was installed, so older plays appear in the mirror's dates instead."));
+    return panel;
+  }
+  const wrap = el("div", { class: "scroll" });
+  wrap.append(table([
+    { label: "Started", cell: (row) => fmtStamp(row.started_at) },
+    { label: "What", cell: (row) => row.season !== null
+        ? "S" + String(row.season).padStart(2, "0") + "E"
+          + String(row.episode || 0).padStart(2, "0") + " · " + row.title
+        : row.title },
+    { label: "Watched", num: true, cell: (row) => row.watched_seconds
+        ? Math.round(row.watched_seconds / 60) + " min"
+        : "–" },
+    { label: "Source", cell: (row) => (row.source || "kodi")
+        + (row.completed ? " ✓" : "") },
+  ], sittings));
+  panel.append(wrap);
+  return panel;
+}
+
+async function openMovie(id) {
+  const host = itemShell();
+  host.append(el("p", { class: "empty" }, "Loading…"));
+  let movie;
+  try {
+    const response = await fetch("/api/movie?id=" + encodeURIComponent(id),
+                                 { cache: "no-store" });
+    movie = await response.json();
+    if (!response.ok) throw new Error(movie.error || response.status);
+  } catch (err) {
+    host.lastChild.textContent = "Could not load this film: " + err.message;
+    return;
+  }
+  host.lastChild.remove();
+
+  const head = el("div", { class: "itemhead" });
+  head.append(el("h2", {}, movie.name));
+  if (movie.year) head.append(el("span", { class: "year" },
+                                 String(movie.year)));
+  if (movie.favourite) head.append(el("span", {}, "♥"));
+  host.append(head);
+  host.append(tags(movie.genres));
+  host.append(factsRow([
+    [movie.rating ? "★ " + movie.rating.toFixed(1) : null, "community"],
+    [movie.critic ? movie.critic + "%" : null, "critics"],
+    [movie.watched ? movie.play_count : null,
+     plural(movie.play_count, "play").replace(/^\d+ /, "")],
+    [movie.last_played ? fmtStamp(movie.last_played) : null,
+     "last watched"],
+    [movie.first_seen ? fmtDay(movie.first_seen) : null,
+     "first seen by the mirror"],
+    [movie.present ? null : "no longer on Jellyfin", ""],
+  ]));
+  host.append(playBar({ id: movie.id }));
+  if (!movie.watched) host.append(notWatchedNote("film"));
+  if (movie.watched) host.append(sittingsPanel(movie.sittings));
+  host.append(similarPanel("movies"));
+  CURRENT_ITEM = { media: "movies", id: movie.id, name: movie.name };
+  loadSimilar(CURRENT_ITEM);
+}
+
+async function openShow(name) {
+  const host = itemShell();
+  host.append(el("p", { class: "empty" }, "Loading…"));
+  let show;
+  try {
+    const response = await fetch("/api/show?name="
+      + encodeURIComponent(name), { cache: "no-store" });
+    show = await response.json();
+    if (!response.ok) throw new Error(show.error || response.status);
+  } catch (err) {
+    host.lastChild.textContent = "Could not load this show: " + err.message;
+    return;
+  }
+  host.lastChild.remove();
+
+  const head = el("div", { class: "itemhead" });
+  head.append(el("h2", {}, show.name));
+  host.append(head);
+  host.append(tags(show.genres));
+  if (!show.watched) {
+    host.append(factsRow([
+      [show.rating ? "★ " + show.rating.toFixed(1) : null, "community"],
+    ]));
+    host.append(playBar({ show: show.name }));
+    host.append(notWatchedNote("show"));
+    host.append(similarPanel("tv"));
+    CURRENT_ITEM = { media: "tv", name: show.name };
+    loadSimilar(CURRENT_ITEM);
+    return;
+  }
+  host.append(factsRow([
+    [num(show.episodes_watched), "episodes watched"],
+    [num(show.plays), "plays"],
+    [show.avg_rating ? "★ " + show.avg_rating.toFixed(1) : null,
+     "average episode"],
+    [show.last_played ? fmtStamp(show.last_played) : null,
+     "last watched"],
+  ]));
+
+  host.append(playBar({ show: show.name }));
+
+  const seasons = el("section", { class: "panel" });
+  seasons.append(el("h2", {}, "Episodes watched per season"));
+  const bars = el("div", { class: "barlist" });
+  const max = Math.max(1, ...show.seasons.map((s) => s.episodes));
+  show.seasons.forEach((season) => {
+    const bar = el("div", { class: "bar" });
+    const track = el("div", { class: "track" });
+    const fill = el("div", { class: "fill" });
+    fill.style.width = (100 * season.episodes / max) + "%";
+    fill.style.background = "var(--episode)";
+    track.append(fill);
+    bar.append(el("div", { class: "name" },
+                  season.season ? "Season " + season.season : "Specials"),
+               track,
+               el("div", { class: "val" }, num(season.episodes)));
+    bars.append(bar);
+  });
+  seasons.append(bars);
+  host.append(seasons);
+
+  const eps = el("section", { class: "panel" });
+  eps.append(el("h2", {}, "Watched episodes"));
+  eps.append(el("p", { class: "hint" }, "Most recently watched first"
+    + (show.episodes_watched > show.episodes.length
+       ? " — showing the latest " + show.episodes.length : "") + "."));
+  const wrap = el("div", { class: "scroll" });
+  wrap.append(table([
+    { label: "Episode", cell: (row) => "S"
+        + String(row.season || 0).padStart(2, "0") + "E"
+        + String(row.episode || 0).padStart(2, "0") + " · " + row.name },
+    { label: "Last watched", cell: (row) => fmtStamp(row.last_played) },
+    { label: "★", num: true, cell: (row) => row.rating
+        ? row.rating.toFixed(1) : "–" },
+  ], show.episodes));
+  eps.append(wrap);
+  host.append(eps);
+  host.append(sittingsPanel(show.sittings));
+  host.append(similarPanel("tv"));
+  CURRENT_ITEM = { media: "tv", name: show.name };
+  loadSimilar(CURRENT_ITEM);
+}
+
+$("refresh").addEventListener("click", () => load(true));
+load(false);
+loadBatches();
+</script>
+</body>
+</html>

@@ -78,6 +78,119 @@
         </setting>
       </group>
     </category>
+    <category id="dashboard" label="32040">
+      <group id="1" label="32041">
+        <setting id="web_enabled" type="boolean" label="32042">
+          <level>0</level>
+          <default>false</default>
+          <control type="toggle"/>
+        </setting>
+        <!-- A button, not a value: pops the dialog that shows the LAN
+             address(es) to type into a browser. Lives here because this is
+             where someone switching the dashboard on is already standing. -->
+        <setting id="web_show_address" type="action" label="32049">
+          <level>0</level>
+          <data>RunScript(script.jellystat, dashboard_info)</data>
+          <dependencies>
+            <dependency type="enable" setting="web_enabled">true</dependency>
+          </dependencies>
+          <control type="button" format="action">
+            <close>false</close>
+          </control>
+        </setting>
+        <setting id="web_port" type="integer" label="32043">
+          <level>0</level>
+          <default>8099</default>
+          <dependencies>
+            <dependency type="enable" setting="web_enabled">true</dependency>
+          </dependencies>
+          <constraints>
+            <minimum>1024</minimum>
+            <step>1</step>
+            <maximum>65535</maximum>
+          </constraints>
+          <!-- popup: the row stays a button, so Left still returns to the
+               category list. An inline slider swallows Left and Right. -->
+          <control type="slider" format="integer">
+            <popup>true</popup>
+            <heading>32043</heading>
+          </control>
+        </setting>
+        <setting id="web_bind_all" type="boolean" label="32044">
+          <level>0</level>
+          <default>true</default>
+          <dependencies>
+            <dependency type="enable" setting="web_enabled">true</dependency>
+          </dependencies>
+          <control type="toggle"/>
+        </setting>
+        <setting id="web_password" type="string" label="32045">
+          <level>0</level>
+          <default></default>
+          <dependencies>
+            <dependency type="enable" setting="web_enabled">true</dependency>
+          </dependencies>
+          <constraints>
+            <allowempty>true</allowempty>
+          </constraints>
+          <control type="edit" format="string">
+            <heading>32045</heading>
+            <hidden>true</hidden>
+          </control>
+        </setting>
+        <setting id="web_cache_minutes" type="integer" label="32046">
+          <level>0</level>
+          <default>10</default>
+          <dependencies>
+            <dependency type="enable" setting="web_enabled">true</dependency>
+          </dependencies>
+          <constraints>
+            <minimum>1</minimum>
+            <step>1</step>
+            <maximum>120</maximum>
+          </constraints>
+          <control type="slider" format="integer">
+            <popup>true</popup>
+            <heading>32046</heading>
+          </control>
+        </setting>
+      </group>
+      <group id="2" label="32050">
+        <setting id="rating_sets_favourite" type="boolean" label="32051">
+          <level>0</level>
+          <default>false</default>
+          <control type="toggle"/>
+        </setting>
+      </group>
+      <group id="3" label="32047">
+        <setting id="history_enabled" type="boolean" label="32048">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="playlog_enabled" type="boolean" label="32050">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="playlog_min_minutes" type="integer" label="32051">
+          <level>0</level>
+          <default>2</default>
+          <dependencies>
+            <dependency type="enable" setting="playlog_enabled">true</dependency>
+          </dependencies>
+          <constraints>
+            <minimum>1</minimum>
+            <step>1</step>
+            <maximum>30</maximum>
+          </constraints>
+          <control type="slider" format="integer">
+            <popup>true</popup>
+            <heading>32051</heading>
+          </control>
+        </setting>
+      </group>
+    </category>
     <category id="website" label="32020">
       <group id="1" label="32021">
         <setting id="endpoint_url" type="string" label="32022">

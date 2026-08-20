@@ -2,7 +2,8 @@
 
 A Kodi script addon that shows what you have watched on your **Jellyfin
 server**, including each item's **genre** and **rating** (community rating,
-critic rating when available, and a ♥ marker for favourites).
+critic rating when available, and a ♥ marker for favourites). It also serves
+a **web dashboard** you can open from your phone or laptop.
 
 ## How it connects
 
@@ -56,6 +57,233 @@ Addon settings → **Display**:
 4. Run it from **Add-ons → Program add-ons → JellyStat**.
 
 Requires Kodi 19 (Matrix) or newer.
+
+## Web dashboard
+
+The addon can serve its own dashboard over HTTP, so the stats are readable
+from any device on your network without installing anything else. It runs
+inside the addon's background service, which starts with Kodi, and stays off
+until you switch it on.
+
+Setup: addon settings → **Web dashboard** → **Enable the web dashboard**,
+then press the **Web dashboard address** button right below it: a box shows
+the addresses to type into a browser, worked out from the box itself, so you
+do not have to go looking for its IP. The default is port **8099**, i.e.
+something like `http://your-kodi-box:8099/`. (The same dialog is also in
+JellyStat's run menu.) The background service picks a settings change up
+within five minutes; restarting Kodi applies it immediately.
+
+### What's on it
+
+The page has a left menu: **Overview** (the stats below), **Recommended**,
+**Movies**, **TV**, **Rate**, **Data** (backup and import) and
+**Settings** (⚙).
+
+- **Recommended** suggests films and shows in separate sections, scored
+  entirely from your own watching: each candidate on your server is weighted
+  by how much of your viewing falls in its genres, times its rating. Nothing
+  leaves the box and no external service is consulted. Clicking any
+  suggestion opens its page, watched or not. Each section has a **genre
+  filter** (tick any number of genres, each showing how many titles it would
+  leave) and **Back** / **Forward** buttons to page through the whole ranked
+  list, with a running "showing 21 to 40 of 6,170". Filtering narrows the
+  list without re-ranking it, so picking Horror answers "the horror you
+  would most likely enjoy" rather than "your favourites that happen to be
+  horror".
+- **Movies** and **TV** each carry their own stats (totals, plays, average
+  rating, films by decade, most replayed, best rated, most watched shows).
+- Every film and show page ends with **Similar films** / **Similar shows**,
+  by shared genres with a nudge for a similar era and better rating.
+- Every film and show page can **play or queue on the Kodi box** the
+  dashboard is served from, so the phone in your hand works as a remote. A
+  show's buttons pick its next unwatched episode. Queueing while nothing is
+  playing starts the item rather than leaving it sitting in a playlist.
+  Titles are resolved through Kodi's own library, so resume points, watched
+  marking and the player's artwork all behave as if you had started it from
+  the television.
+- Titles in the **Rate** queue link through to their own page.
+- **Rate** lists watched titles that have no rating anywhere and lets you
+  score them; see "Rating what you have watched" below. Settings currently holds the
+site-wide date format (ISO, day/month, month/day, or "20 Aug 2026") and the
+clock style (24-hour or am/pm), plus what recommendations may suggest, set
+separately for films and TV: **only ones I have not seen**, or **seen and
+new**. That choice drives both the Recommended page and the Similar section
+on every item page. All of these are stored in the browser, so each device
+viewing the dashboard can have its own. A **search box** in the header finds any watched film
+or TV show and opens its own page. For a film that page carries ratings,
+play count and logged sittings; for a show, episodes watched per season,
+the watched episode list, and its sittings.
+
+- **Cards**: films and episodes watched, all time and in the recent window,
+  total plays, watch pace, current and longest daily streak, average rating.
+- **Watching calendar**, a year of daily squares, purple where films
+  dominated the day and green where episodes did, darker on quieter days.
+- **Time of day** and **day of the week**, the two charts that actually
+  describe a habit rather than a library, counted from the play log's real
+  sessions once it has any (see below).
+- **Genres**, switchable between films and TV, the recent window and all
+  time, and three ways of counting: by title, weighted by plays (so
+  rewatches pull their genre up), or first-listed genre only (so the shares
+  add up to 100%).
+- **Recent days**, **ratings you watch**, **top shows** and a
+  **recently watched** list.
+- **Over time**, newly watched titles per day and how the genre mix has
+  moved, drawn from the daily history described below.
+
+The page adapts to a phone screen and follows the browser's light or dark
+setting. It is plain HTML with no external requests, so it works on a
+network with no internet access.
+
+### Settings
+
+Addon settings → **Web dashboard**:
+
+- **Enable the web dashboard** (default off).
+- **Port** (default 8099).
+- **Reachable from other machines** (default on). Turning it off binds to
+  `127.0.0.1`, so only the Kodi box itself can open the page.
+- **Password (optional)**, blank by default. With a password set, the page
+  asks for it and the JSON endpoints require it too (send it as an
+  `X-Auth-Token` header if you want to script against them).
+- **Refresh data at most every (minutes)** (default 10). Reading a whole
+  Jellyfin library takes a few seconds, so the result is cached for this
+  long; the **Refresh** button on the page bypasses the cache.
+
+This is designed for a home network. It speaks plain HTTP with no
+certificate, and the password is a convenience for a shared household, not
+protection against the open internet, so don't port-forward it.
+
+### The play log: every sitting, with its date and time
+
+Jellyfin's API cannot say *when* you watched something beyond each item's
+single most-recent play date, so a film watched three times reports one
+date. The addon therefore keeps its own log: a background listener notes
+every movie or episode played on this Kodi box as a session with its real
+**start and end clock time** and how much was actually watched (position
+reached, so a long pause doesn't count; Kodi being closed mid-film still
+logs the sitting).
+Sessions shorter than a threshold (default 2 minutes) are ignored as
+mis-clicks. Settings: **Web dashboard → History → Log each play with its
+date and time** (default on) and **Ignore sessions shorter than (minutes)**.
+
+Once the log has sessions, the calendar, time-of-day and day-of-week charts
+count **real plays** from its first covered date onwards, so three episodes
+in an evening count as three, and the calendar marks the changeover
+(`→ real plays`). Days before it, and titles played on other devices with no
+logged session, still count once from Jellyfin's last-played date, so
+nothing disappears. The dashboard also gains a **Rewatches** table: titles
+with more than one logged sitting, with first and latest dates.
+
+Only what plays on this Kodi box is captured live; history from other
+devices or other tools comes in through the importer below.
+
+### Importing watch history from a file
+
+The dashboard's **Import watch history** section backfills the play log from
+a file. Nothing is written on upload: the file is parsed and **staged**, you
+see what it contains (plays, date range, devices, rows without clock times)
+and how it compares with what is already logged (duplicates, new plays,
+overlapping days), and only then choose how to apply it:
+
+- **Merge** adds only what is not already logged (matched on title and
+  day); existing rows are never touched.
+- **Replace** lets this file win for its date range. You pick what it may
+  delete first: previously imported sessions in that range (default), and
+  optionally this box's own logged sessions. Deletion is permanent and the
+  page says so before it happens.
+
+Every import is stored as a batch and listed under the importer with a
+**Remove** button, so a wrong file is one click to take back out (a
+replace-mode deletion, however, cannot be restored).
+
+Recognised formats, sniffed from the content rather than the extension:
+
+| File | What it gives you |
+|---|---|
+| Jellyfin **Playback Reporting** plugin backup (JSON) or TSV export | The best source: every play on **every device**, with clock times and device names, years of backdated history at once |
+| Another box's JellyStat `history.db` | Merge a second Kodi machine into one picture |
+| **Trakt** history CSV | Full timestamps from before you ran Jellyfin |
+| **Letterboxd** diary CSV | Films with dates only, kept out of the time-of-day chart rather than inventing an hour |
+| Generic CSV/JSON | Columns `started_at, media, title` (plus optional `show, season, episode, year, watched_seconds, device`) |
+
+Uploads are capped at 50 MB, and with a dashboard password set the import
+endpoints require it like everything else.
+
+### Rating what you have watched
+
+**Rate** queues up what you have watched, films and episodes separately,
+newest watch first, and gives each a 1 to 10 slider with a step arrow either
+side and the score beside it. Two scopes:
+
+- **Not rated by me** (the default), everything you have not scored
+  yourself, whatever rating the internet has for it. Each row shows the
+  community rating as context.
+- **No rating anywhere**, only titles Jellyfin has no community rating for
+  either, which on a well-scraped library is a very short list.
+
+The score is written to Jellyfin as itself, 7 stays 7, using the per-user
+`UserData.Rating` field. That is the same field and the same route
+**JellyRate** writes when it asks for a score as the credits roll, so the
+two addons agree by construction: a rating made in either turns up in the
+other.
+
+- Your score is stored by JellyStat in the mirror, and sent to Jellyfin.
+- Ratings made anywhere else, in JellyRate, on a phone, or in the Jellyfin
+  web app, are read back on every mirror sync, so they appear here without
+  any bridge between the addons.
+- Where the two disagree the server wins, since it is the copy every device
+  shares. The one exception is a local score whose write to Jellyfin
+  *failed*: that is a pending write rather than stale data, and is left
+  alone until it succeeds.
+- The thumbs up or down shown in Jellyfin's own interface is derived by the
+  server from the number, so JellyStat does not try to set it.
+- Optionally a 9 or 10 also marks the item a favourite
+  (settings -> **Web dashboard** -> **Ratings**).
+- The public **community rating** is item metadata, not per-user, and
+  writing it needs an administrator API key. If the key in the addon's
+  server settings is an administrator's, your score is written there too;
+  otherwise the page says it cannot be.
+
+A failed write never costs you the score: it is stored locally first, and
+the sync state is kept beside it so the page can tell you what did and did
+not reach the server.
+
+### Backup and restore
+
+**Data → Download backup** exports the whole database (mirror, snapshots,
+sitting log) as one `.db` file, served as a point-in-time snapshot so a
+mid-download write cannot corrupt it. Restoring is importing that file on
+the same page.
+
+### Your own copy of the library
+
+Every dashboard load also folds the fetched library into a local mirror
+(`items` in `history.db`): one row per watched film and episode, inserted or
+updated only when something changed. The mirror is the addon's permanent
+copy: items deleted from Jellyfin stay in it, and if Jellyfin is
+unreachable the dashboard serves from the mirror ("as of the last sync")
+instead of failing. It also enables change detection: when a mirrored
+item's last-played date moves forward, that play is recorded in the play
+log with Jellyfin's own timestamp, on any device, phone and web included.
+Plays on this Kodi box are not double-counted; the player logger already
+recorded those first-hand.
+
+### History for the over-time charts
+
+Jellyfin keeps only the *most recent* play date for each item, so it cannot
+answer "what did my viewing look like in March". The addon therefore records
+one snapshot a day into `history.db` in its own addon-data folder (roughly
+10 KB per day, kept for three years) and the **Over time** charts are drawn
+from that. It starts filling
+in from the day you enable the dashboard, so those charts are thin at first.
+
+The background service takes the snapshot at the same hour as the website
+send (**Website stats → Schedule → Send at**, default 18:00), whether or not
+a website endpoint is configured. Opening the dashboard also records the day
+if it is still missing, so a box that is only switched on in the morning
+still builds a history. Either way it is one row per day, and a send's
+payload is reused rather than reading the library twice. Turn it off with **Web dashboard → History → Keep a daily
+snapshot for the over-time charts**.
 
 ## Daily genre stats to the website
 
@@ -128,10 +356,18 @@ script.jellystat/
 ├── addon.xml            # addon manifest (script + service)
 ├── main.py              # entry point, Jellyfin API + dialogs
 ├── stats_sender.py      # snapshot payload + website POST
-├── service.py           # background service: daily send on Kodi load
+├── webdata.py           # dashboard payload: totals, habits, recent lists
+├── webserver.py         # the dashboard's HTTP server and password gate
+├── history.py           # daily snapshots in SQLite, for the trend charts
+├── playlog.py           # per-sitting play log (date, time, position)
+├── player.py            # xbmc.Player listener that feeds the play log
+├── importer.py          # file import: parse, stage, compare, commit
+├── service.py           # background service: dashboard + daily jobs
 └── resources/
     ├── icon.png         # addon icon
-    └── settings.xml     # server fallback + website stats settings
+    ├── settings.xml     # server fallback, dashboard + website settings
+    └── web/
+        └── dashboard.html   # the whole dashboard, no external requests
 JellyStat Dist/          # versioned addon build zips
 ```
 

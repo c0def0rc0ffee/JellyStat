@@ -9,6 +9,7 @@ otherwise the server URL and API key from this addon's settings are used.
 
 import json
 import ssl
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -400,6 +401,48 @@ def send_stats_now():
                            tv["last_30_days"]["total"]))
 
 
+def show_dashboard_info():
+    """Tell the user where the dashboard is, which is the hard part of it.
+
+    The addresses come from the running box, not from the settings, because
+    "which IP does this Kodi have" is exactly what somebody standing at the
+    TV cannot look up.
+    """
+    # Imported here so the menu still opens on a box where the service
+    # modules are unavailable for any reason.
+    import webserver
+    if ADDON.getSetting("web_enabled") != "true":
+        xbmcgui.Dialog().ok(
+            ADDON_NAME,
+            "The web dashboard is switched off.\n"
+            "Turn it on in settings -> Web dashboard, then come back here "
+            "for the address to open on your phone or laptop.")
+        return
+    port = setting_int("web_port", webserver.DEFAULT_PORT)
+    lines = ["Open one of these in a browser on any device on this network:",
+             ""]
+    lines.extend(webserver.local_urls(port))
+    if ADDON.getSetting("web_bind_all") == "false":
+        lines.extend([
+            "",
+            "Only this machine can reach it at the moment: "
+            '"Reachable from other machines" is off in settings -> '
+            "Web dashboard."])
+    if ADDON.getSetting("web_password").strip():
+        lines.extend(["", "A password is set, so the page will ask for it "
+                          "before showing anything."])
+    lines.extend(["",
+                  "The dashboard is served by the addon's background "
+                  "service, which starts with Kodi. Just switched it on? "
+                  "Close settings with OK first, then allow up to five "
+                  "minutes for the service to pick the change up (or "
+                  "restart Kodi). If nothing answers after that, check the "
+                  "Kodi log for [JellyStat] - the usual cause is another "
+                  "program already using port %d." % port])
+    xbmcgui.Dialog().textviewer("%s - Web dashboard" % ADDON_NAME,
+                                "\n".join(lines))
+
+
 def main():
     progress = xbmcgui.DialogProgress()
     progress.create(ADDON_NAME, "Connecting to Jellyfin...")
@@ -428,7 +471,8 @@ def main():
             "Movies - last %d days (%d)" % (days, len(recent_movies)),
             "Episodes - all time (%d)" % len(episodes),
             "Episodes - last %d days (%d)" % (days, len(recent_episodes)),
-            "Send stats to website now"]
+            "Send stats to website now",
+            "Web dashboard address"]
     while True:
         choice = xbmcgui.Dialog().select(ADDON_NAME, menu)
         if choice == -1:
@@ -452,7 +496,16 @@ def main():
                        for e in recent_episodes])
         elif choice == 5:
             send_stats_now()
+        elif choice == 6:
+            show_dashboard_info()
 
 
 if __name__ == "__main__":
-    main()
+    # "dashboard_info" is the settings screen's "Web dashboard address"
+    # button (RunScript with an argument); it jumps straight to the dialog
+    # without connecting to Jellyfin, so it answers instantly even when the
+    # server is down.
+    if len(sys.argv) > 1 and sys.argv[1] == "dashboard_info":
+        show_dashboard_info()
+    else:
+        main()

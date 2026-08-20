@@ -110,3 +110,59 @@ msgstr ""
 msgctxt "#32032"
 msgid "Weekends (Sat and Sun)"
 msgstr ""
+
+msgctxt "#32040"
+msgid "Web dashboard"
+msgstr ""
+
+msgctxt "#32041"
+msgid "Browse your stats from any device on the network"
+msgstr ""
+
+msgctxt "#32042"
+msgid "Enable the web dashboard"
+msgstr ""
+
+msgctxt "#32043"
+msgid "Port"
+msgstr ""
+
+msgctxt "#32044"
+msgid "Reachable from other machines"
+msgstr ""
+
+msgctxt "#32045"
+msgid "Password (optional)"
+msgstr ""
+
+msgctxt "#32046"
+msgid "Refresh data at most every (minutes)"
+msgstr ""
+
+msgctxt "#32047"
+msgid "History"
+msgstr ""
+
+msgctxt "#32048"
+msgid "Keep a daily snapshot for the over-time charts"
+msgstr ""
+
+msgctxt "#32049"
+msgid "Web dashboard address"
+msgstr ""
+
+msgctxt "#32050"
+msgid "Log each play with its date and time"
+msgstr ""
+
+msgctxt "#32051"
+msgid "Ignore sessions shorter than (minutes)"
+msgstr ""
+
+msgctxt "#32050"
+msgid "Ratings"
+msgstr ""
+
+msgctxt "#32051"
+msgid "A 9 or 10 also marks the item a favourite on Jellyfin"
+msgstr ""
