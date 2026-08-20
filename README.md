@@ -219,12 +219,14 @@ side and the score beside it. Two scopes:
   yourself, whatever rating the internet has for it. Each row shows the
   community rating as context.
 - **Rated by me**, what you have already scored. The slider starts on your
-  current score so changing your mind is one drag, and each row says where
-  that score is stored: two dots, one for this addon's database and one for
-  Jellyfin, followed by the state in words (*saved here and on Jellyfin*,
-  *came from Jellyfin*, or *saved here only, Jellyfin refused it* with the
-  second dot red). The page header counts how many of your scores reached
-  the server.
+  current score so changing your mind is one drag, and each row says plainly
+  where that score is stored: two dots, JellyStat then Jellyfin, followed by
+  one of **Saved in JellyStat**, **Saved in Jellyfin**, or **Saved in
+  JellyStat and Jellyfin**. A push that failed reads *Saved in JellyStat
+  only, Jellyfin refused it* with the second dot red, and if the two ever
+  hold different numbers the line shows both. The status is computed from
+  the two stored scores rather than from how the rating got there, so the
+  dots and the words can never disagree.
 - **No rating anywhere**, only titles Jellyfin has no community rating for
   either, which on a well-scraped library is a very short list.
 

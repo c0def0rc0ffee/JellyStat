@@ -75,6 +75,9 @@ RATING_COLUMNS = [
     "ALTER TABLE items ADD COLUMN user_rating REAL",
     "ALTER TABLE items ADD COLUMN user_rating_at TEXT",
     "ALTER TABLE items ADD COLUMN rating_sync TEXT",
+    # What Jellyfin holds, kept as its own column so "where is this score
+    # saved" is answered from data rather than guessed from history.
+    "ALTER TABLE items ADD COLUMN jf_rating REAL",
 ]
 
 
@@ -155,6 +158,10 @@ def _adopt_rating(connection, row, existing):
     """
     server = row["jf_rating"]
     local, sync_state = existing[2], existing[3]
+    # Always record what the server holds, even when the local score wins:
+    # the page reports both sides, so both have to be true.
+    connection.execute("UPDATE items SET jf_rating = ? WHERE id = ?",
+                       (server, row["id"]))
     if server is None:
         return False
     if local is not None and abs(float(local) - server) < 0.001:
@@ -243,8 +250,10 @@ def sync(movies, episodes, series_genres, utc_offset):
                         if row["jf_rating"]:
                             connection.execute(
                                 "UPDATE items SET user_rating = ?, "
+                                "jf_rating = ?, "
                                 "rating_sync = 'from jellyfin' WHERE id = ?",
-                                (row["jf_rating"], row["id"]))
+                                (row["jf_rating"], row["jf_rating"],
+                                 row["id"]))
                         added += 1
                         continue
                     changed = (row["last_played"] or "") != (old[1] or "")

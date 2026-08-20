@@ -2036,9 +2036,9 @@ const RATE_SCOPES = {
   },
   rated: {
     label: "Rated by me",
-    hint: "What you have already scored, with where each score is stored. "
-      + "The slider starts on your current score, so changing your mind is "
-      + "one drag.",
+    hint: "What you have already scored, and where each score is stored: "
+      + "the two dots are JellyStat and Jellyfin. The slider starts on your "
+      + "current score, so changing your mind is one drag.",
   },
   missing: {
     label: "No rating anywhere",
@@ -2047,19 +2047,23 @@ const RATE_SCOPES = {
   },
 };
 
-/* Two dots: this addon's database, and Jellyfin. */
+/* Two dots, one per place, then the sentence the server computed. The dots
+   are filled from the two scores themselves, so they cannot disagree with
+   the words next to them. */
 function whereSaved(item) {
   const box = el("span", { class: "where" });
+  const inLocal = item.score !== null && item.score !== undefined;
+  const inRemote = item.jf_score !== null && item.jf_score !== undefined;
   const failed = (item.sync || "").startsWith("error:");
-  const onServer = item.score !== null && item.score !== undefined
-    && !failed && item.sync !== null;
-  const local = el("span", { class: "dot on", title: "Saved in JellyStat" });
-  const remote = el("span", {
-    class: "dot" + (failed ? " bad" : (onServer ? " on" : "")),
-    title: failed ? "Not saved on Jellyfin" : "Saved on Jellyfin",
-  });
-  box.append(local, remote,
-             el("span", {}, item.sync_text || "saved here"));
+  box.append(el("span", {
+    class: "dot" + (inLocal ? " on" : ""),
+    title: inLocal ? "Saved in JellyStat" : "Not in JellyStat",
+  }));
+  box.append(el("span", {
+    class: "dot" + (inRemote ? " on" : (failed ? " bad" : "")),
+    title: inRemote ? "Saved in Jellyfin" : "Not in Jellyfin",
+  }));
+  box.append(el("span", {}, item.sync_text || "Not saved anywhere"));
   return box;
 }
 
@@ -2106,8 +2110,8 @@ async function loadRateQueue(media, scope) {
 function renderRateSummary(summary) {
   const host = $("rate-summary");
   host.textContent = "";
-  [[num(summary.rated_by_you), "rated by you so far"],
-   [num(summary.on_jellyfin), "of those also on Jellyfin"],
+  [[num(summary.rated_by_you), "saved in JellyStat"],
+   [num(summary.on_jellyfin), "of those also in Jellyfin"],
    [num(summary.mine.movies), "films still to rate"],
    [num(summary.mine.episodes), "episodes still to rate"],
    summary.sync_failures ? [num(summary.sync_failures), "failed to sync"]
@@ -2254,15 +2258,17 @@ async function submitRating(item, score, row, state) {
     state.textContent = "";
     if (score === null) {
       state.textContent = result.synced
-        ? "Cleared here and on Jellyfin."
-        : "Cleared here.";
+        ? "Cleared in JellyStat and Jellyfin."
+        : "Cleared in JellyStat.";
     } else if (result.synced) {
-      state.append(whereSaved({ score: score, sync: "synced",
-                               sync_text: "saved here and on Jellyfin" }));
+      state.append(whereSaved({ score: score, jf_score: score,
+                               sync: "synced",
+                               sync_text: "Saved in JellyStat and Jellyfin" }));
     } else {
       state.className = "ratestate bad";
-      state.append(whereSaved({ score: score, sync: result.state,
-                               sync_text: "saved here only, "
+      state.append(whereSaved({ score: score, jf_score: null,
+                               sync: result.state,
+                               sync_text: "Saved in JellyStat only, "
                                  + result.state.replace(/^error: /, "") }));
     }
     if (result.summary) {

@@ -79,23 +79,31 @@ SCOPE_CLAUSES = {
 }
 DEFAULT_SCOPE = "mine"
 
-# How a stored sync state reads on the page. The state strings are written
-# by rate() and by library._adopt_rating; anything unrecognised (an
-# "error: ..." line) is shown as itself, since the reason is the useful part.
-SYNC_LABELS = {
-    "synced": "saved here and on Jellyfin",
-    "from jellyfin": "came from Jellyfin",
-    "not pushed": "saved here; Jellyfin was written by whatever set it",
-}
+def describe_sync(local, remote, state=None):
+    """Where a score is actually saved, named by place.
 
-
-def describe_sync(state):
-    """Plain words for where a score actually lives."""
-    if not state:
-        return None
-    if state.startswith("error:"):
-        return "saved here only, Jellyfin refused it"
-    return SYNC_LABELS.get(state, state)
+    Computed from the two stored values rather than from how the score got
+    there: `local` is JellyStat's own column, `remote` is what the last sync
+    or push saw on Jellyfin. A failed push leaves the two disagreeing, which
+    is exactly the case worth showing.
+    """
+    has_local = local is not None
+    has_remote = remote is not None
+    if has_local and has_remote:
+        text = "Saved in JellyStat and Jellyfin"
+        if abs(float(local) - float(remote)) >= 0.001:
+            # Both hold a score but not the same one, which the plain
+            # sentence would hide.
+            text = ("Saved in JellyStat (%g) and Jellyfin (%g)"
+                    % (local, remote))
+        return text
+    if has_local:
+        if (state or "").startswith("error:"):
+            return "Saved in JellyStat only, Jellyfin refused it"
+        return "Saved in JellyStat"
+    if has_remote:
+        return "Saved in Jellyfin"
+    return None
 
 
 def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
@@ -110,7 +118,7 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
     if media == "movies":
         rows = connection.execute(
             "SELECT id, name, year, last_played, play_count, genres, rating, "
-            "user_rating, rating_sync "
+            "user_rating, rating_sync, jf_rating "
             "FROM items WHERE media = 'movie' AND %s "
             "ORDER BY last_played DESC LIMIT ? OFFSET ?" % clause,
             (limit, offset)).fetchall()
@@ -121,13 +129,14 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
                   "last_played": row[3], "plays": row[4],
                   "genres": json.loads(row[5] or "[]"),
                   "community": row[6], "score": row[7],
-                  "sync": row[8], "sync_text": describe_sync(row[8]),
+                  "sync": row[8], "jf_score": row[9],
+                  "sync_text": describe_sync(row[7], row[9], row[8]),
                   "media": "movie"}
                  for row in rows]
     else:
         rows = connection.execute(
             "SELECT id, name, series_name, season, episode, last_played, "
-            "genres, rating, user_rating, rating_sync "
+            "genres, rating, user_rating, rating_sync, jf_rating "
             "FROM items WHERE media = 'episode' AND %s "
             "ORDER BY last_played DESC LIMIT ? OFFSET ?" % clause,
             (limit, offset)).fetchall()
@@ -138,7 +147,8 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
                   "season": row[3], "episode": row[4], "last_played": row[5],
                   "genres": json.loads(row[6] or "[]"),
                   "community": row[7], "score": row[8],
-                  "sync": row[9], "sync_text": describe_sync(row[9]),
+                  "sync": row[9], "jf_score": row[10],
+                  "sync_text": describe_sync(row[8], row[10], row[9]),
                   "media": "episode"}
                  for row in rows]
     connection.close()
@@ -164,8 +174,7 @@ def summary():
         "         THEN 1 ELSE 0 END), "
         "SUM(CASE WHEN media='episode' AND user_rating IS NOT NULL "
         "         THEN 1 ELSE 0 END), "
-        "SUM(CASE WHEN user_rating IS NOT NULL AND rating_sync = 'synced' "
-        "         THEN 1 ELSE 0 END) "
+        "SUM(CASE WHEN jf_rating IS NOT NULL THEN 1 ELSE 0 END) "
         "FROM items").fetchone()
     connection.close()
     return {
@@ -322,6 +331,10 @@ def rate(item_id, score, favourite=None, push=True):
             "rating_sync = ? WHERE id = ?",
             (score, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
              state, item_id))
+        if state == "synced":
+            # The push succeeded, so Jellyfin now holds this exact score.
+            connection.execute("UPDATE items SET jf_rating = ? WHERE id = ?",
+                               (score, item_id))
         if favourite is not None:
             connection.execute("UPDATE items SET favourite = ? WHERE id = ?",
                                (1 if favourite else 0, item_id))
