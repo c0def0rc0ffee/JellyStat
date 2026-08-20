@@ -218,6 +218,13 @@ side and the score beside it. Two scopes:
 - **Not rated by me** (the default), everything you have not scored
   yourself, whatever rating the internet has for it. Each row shows the
   community rating as context.
+- **Rated by me**, what you have already scored. The slider starts on your
+  current score so changing your mind is one drag, and each row says where
+  that score is stored: two dots, one for this addon's database and one for
+  Jellyfin, followed by the state in words (*saved here and on Jellyfin*,
+  *came from Jellyfin*, or *saved here only, Jellyfin refused it* with the
+  second dot red). The page header counts how many of your scores reached
+  the server.
 - **No rating anywhere**, only titles Jellyfin has no community rating for
   either, which on a well-scraped library is a very short list.
 

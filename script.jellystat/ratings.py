@@ -74,8 +74,28 @@ SCOPE_CLAUSES = {
     "missing": "rating IS NULL AND user_rating IS NULL",
     # You have not scored it yourself, whatever the public rating says.
     "mine": "user_rating IS NULL",
+    # What you have already scored, so it can be reviewed or changed.
+    "rated": "user_rating IS NOT NULL",
 }
 DEFAULT_SCOPE = "mine"
+
+# How a stored sync state reads on the page. The state strings are written
+# by rate() and by library._adopt_rating; anything unrecognised (an
+# "error: ..." line) is shown as itself, since the reason is the useful part.
+SYNC_LABELS = {
+    "synced": "saved here and on Jellyfin",
+    "from jellyfin": "came from Jellyfin",
+    "not pushed": "saved here; Jellyfin was written by whatever set it",
+}
+
+
+def describe_sync(state):
+    """Plain words for where a score actually lives."""
+    if not state:
+        return None
+    if state.startswith("error:"):
+        return "saved here only, Jellyfin refused it"
+    return SYNC_LABELS.get(state, state)
 
 
 def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
@@ -89,7 +109,8 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
     connection = _connect()
     if media == "movies":
         rows = connection.execute(
-            "SELECT id, name, year, last_played, play_count, genres, rating "
+            "SELECT id, name, year, last_played, play_count, genres, rating, "
+            "user_rating, rating_sync "
             "FROM items WHERE media = 'movie' AND %s "
             "ORDER BY last_played DESC LIMIT ? OFFSET ?" % clause,
             (limit, offset)).fetchall()
@@ -99,12 +120,15 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
         items = [{"id": row[0], "name": row[1], "year": row[2],
                   "last_played": row[3], "plays": row[4],
                   "genres": json.loads(row[5] or "[]"),
-                  "community": row[6], "media": "movie"}
+                  "community": row[6], "score": row[7],
+                  "sync": row[8], "sync_text": describe_sync(row[8]),
+                  "media": "movie"}
                  for row in rows]
     else:
         rows = connection.execute(
             "SELECT id, name, series_name, season, episode, last_played, "
-            "genres, rating FROM items WHERE media = 'episode' AND %s "
+            "genres, rating, user_rating, rating_sync "
+            "FROM items WHERE media = 'episode' AND %s "
             "ORDER BY last_played DESC LIMIT ? OFFSET ?" % clause,
             (limit, offset)).fetchall()
         total = connection.execute(
@@ -113,7 +137,9 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
         items = [{"id": row[0], "name": row[1], "show": row[2],
                   "season": row[3], "episode": row[4], "last_played": row[5],
                   "genres": json.loads(row[6] or "[]"),
-                  "community": row[7], "media": "episode"}
+                  "community": row[7], "score": row[8],
+                  "sync": row[9], "sync_text": describe_sync(row[9]),
+                  "media": "episode"}
                  for row in rows]
     connection.close()
     return {"items": items, "total": total, "media": media, "scope": scope}
@@ -133,13 +159,21 @@ def summary():
         "SUM(CASE WHEN media='episode' AND user_rating IS NULL "
         "         THEN 1 ELSE 0 END), "
         "SUM(CASE WHEN user_rating IS NOT NULL THEN 1 ELSE 0 END), "
-        "SUM(CASE WHEN rating_sync LIKE 'error%' THEN 1 ELSE 0 END) "
+        "SUM(CASE WHEN rating_sync LIKE 'error%' THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN media='movie' AND user_rating IS NOT NULL "
+        "         THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN media='episode' AND user_rating IS NOT NULL "
+        "         THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN user_rating IS NOT NULL AND rating_sync = 'synced' "
+        "         THEN 1 ELSE 0 END) "
         "FROM items").fetchone()
     connection.close()
     return {
         "missing": {"movies": row[0] or 0, "episodes": row[1] or 0},
         "mine": {"movies": row[2] or 0, "episodes": row[3] or 0},
+        "rated": {"movies": row[6] or 0, "episodes": row[7] or 0},
         "rated_by_you": row[4] or 0,
+        "on_jellyfin": row[8] or 0,
         "sync_failures": row[5] or 0,
     }
 

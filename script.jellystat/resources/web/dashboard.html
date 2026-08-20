@@ -182,6 +182,14 @@ nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
 .rateitem.done .what, .rateitem.done .meta { opacity: .55; }
 .ratestate { font-size: 12px; color: var(--ink-dim); margin-top: 3px; }
 .ratestate.bad { color: var(--warn); }
+/* Where a score lives, at a glance: a filled dot for each place that has
+   it, so a row that only saved locally is visibly different from one that
+   reached the server. */
+.where { display: inline-flex; align-items: center; gap: 5px; }
+.where .dot { width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--ink-dim); opacity: .35; }
+.where .dot.on { opacity: 1; background: var(--episode); }
+.where .dot.bad { opacity: 1; background: var(--warn); }
 
 /* Settings view */
 .prefrow { margin-bottom: 20px; }
@@ -2026,12 +2034,34 @@ const RATE_SCOPES = {
       + "whatever rating the internet has for it. Newest watch first, "
       + "because last night is still fresh.",
   },
+  rated: {
+    label: "Rated by me",
+    hint: "What you have already scored, with where each score is stored. "
+      + "The slider starts on your current score, so changing your mind is "
+      + "one drag.",
+  },
   missing: {
     label: "No rating anywhere",
     hint: "Only titles with no community rating on Jellyfin either - the "
       + "gaps in the metadata, usually obscure or home-made releases.",
   },
 };
+
+/* Two dots: this addon's database, and Jellyfin. */
+function whereSaved(item) {
+  const box = el("span", { class: "where" });
+  const failed = (item.sync || "").startsWith("error:");
+  const onServer = item.score !== null && item.score !== undefined
+    && !failed && item.sync !== null;
+  const local = el("span", { class: "dot on", title: "Saved in JellyStat" });
+  const remote = el("span", {
+    class: "dot" + (failed ? " bad" : (onServer ? " on" : "")),
+    title: failed ? "Not saved on Jellyfin" : "Saved on Jellyfin",
+  });
+  box.append(local, remote,
+             el("span", {}, item.sync_text || "saved here"));
+  return box;
+}
 
 async function loadRateQueue(media, scope) {
   RATE_MEDIA = media;
@@ -2062,9 +2092,7 @@ async function loadRateQueue(media, scope) {
 
   list.textContent = "";
   if (!payload.items.length) {
-    list.append(el("p", { class: "empty" }, RATE_SCOPE === "mine"
-      ? "You have scored everything you have watched."
-      : "Everything you have watched carries a community rating."));
+    list.append(el("p", { class: "empty" }, rateEmptyText()));
     return;
   }
   payload.items.forEach((item) => list.append(rateRow(item)));
@@ -2079,6 +2107,7 @@ function renderRateSummary(summary) {
   const host = $("rate-summary");
   host.textContent = "";
   [[num(summary.rated_by_you), "rated by you so far"],
+   [num(summary.on_jellyfin), "of those also on Jellyfin"],
    [num(summary.mine.movies), "films still to rate"],
    [num(summary.mine.episodes), "episodes still to rate"],
    summary.sync_failures ? [num(summary.sync_failures), "failed to sync"]
@@ -2113,6 +2142,14 @@ function renderRateScope(summary) {
   });
 }
 
+function rateEmptyText() {
+  if (RATE_SCOPE === "rated") return "You have not scored anything yet.";
+  if (RATE_SCOPE === "mine") {
+    return "You have scored everything you have watched.";
+  }
+  return "Everything you have watched carries a community rating.";
+}
+
 function rateRow(item) {
   const row = el("div", { class: "rateitem" });
   const left = el("div");
@@ -2137,10 +2174,16 @@ function rateRow(item) {
                     : "no community rating"]
       .filter(Boolean).join(" · ")));
   const state = el("div", { class: "ratestate" });
+  if (item.score !== null && item.score !== undefined) {
+    state.append(whereSaved(item));
+    if ((item.sync || "").startsWith("error:")) state.className =
+      "ratestate bad";
+    row.classList.add("done");
+  }
   left.append(state);
   row.append(left);
 
-  row.append(ratingControl(item, row, state));
+  row.append(ratingControl(item, row, state, item.score));
   return row;
 }
 
@@ -2208,14 +2251,19 @@ async function submitRating(item, score, row, state) {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || response.status);
     row.classList.add("done");
-    if (result.synced) {
-      state.textContent = score === null
+    state.textContent = "";
+    if (score === null) {
+      state.textContent = result.synced
         ? "Cleared here and on Jellyfin."
-        : "Saved: " + score + "/10 — " + result.actions.join(", ") + ".";
+        : "Cleared here.";
+    } else if (result.synced) {
+      state.append(whereSaved({ score: score, sync: "synced",
+                               sync_text: "saved here and on Jellyfin" }));
     } else {
       state.className = "ratestate bad";
-      state.textContent = "Saved here, but " + result.state.replace(
-        /^error: /, "");
+      state.append(whereSaved({ score: score, sync: result.state,
+                               sync_text: "saved here only, "
+                                 + result.state.replace(/^error: /, "") }));
     }
     if (result.summary) {
       renderRateSummary(result.summary);
