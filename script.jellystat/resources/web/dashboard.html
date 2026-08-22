@@ -290,6 +290,23 @@ h3.steph { font-size: 14.5px; margin: 22px 0 6px;
 .bak .grow { flex: 1; }
 
 /* Genre filter chips */
+/* Ordering and the numeric filters. Kept on one row above the genre chips:
+   ordering answers "which first", the chips answer "which at all", and
+   mixing the two into one strip of buttons made neither readable. */
+.sortbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+  margin: 0 0 12px; font-size: 12.5px; color: var(--ink-dim); }
+.sortbar label { display: flex; align-items: center; gap: 6px; }
+.sortbar select, .sortbar input {
+  background: var(--panel-2); color: var(--ink); font-family: inherit;
+  border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px;
+  font-size: 12.5px;
+}
+.sortbar input { width: 68px; font-variant-numeric: tabular-nums; }
+.sortbar select:focus-visible, .sortbar input:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; }
+.sortbar .reset { border: 0; background: transparent; color: var(--warn);
+  cursor: pointer; font-size: 12.5px; padding: 4px 2px; }
+
 .genrefilter { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .genrefilter button {
   border: 1px solid var(--line); background: transparent; color: var(--ink-dim);
@@ -299,7 +316,14 @@ h3.steph { font-size: 14.5px; margin: 22px 0 6px;
 .genrefilter button[aria-pressed="true"] {
   background: var(--accent); border-color: var(--accent); color: #fff;
 }
+/* Excluded, not merely unselected: struck through and in the warning
+   colour, because "no horror" and "horror not chosen" must not look alike. */
+.genrefilter button.nope {
+  background: transparent; border-color: var(--warn); color: var(--warn);
+  text-decoration: line-through;
+}
 .genrefilter .clearall { color: var(--warn); border-color: transparent; }
+.hint.warnline b { color: var(--warn); }
 .genrefilter .more { border-style: dashed; }
 
 /* Pager */
@@ -599,7 +623,7 @@ button.danger { color: var(--warn); }
       Overview</button>
     <button data-view="recommended">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg>
-      Recommended</button>
+      Discover</button>
     <button data-view="movies">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M7 5v14M17 5v14M2.5 12h19"/></svg>
       Movies</button>
@@ -749,28 +773,35 @@ button.danger { color: var(--warn); }
 
     <div id="view-recommended" style="display:none">
       <section class="panel">
-        <h2>Recommended films</h2>
+        <h2>Films</h2>
         <p class="hint" id="movie-recs-hint"></p>
         <div class="tabs" id="movie-recs-tabs"></div>
+        <div class="sortbar" id="movie-recs-sort"></div>
         <div class="genrefilter" id="movie-recs-genres"></div>
         <div id="movie-recs"></div>
         <div class="pager" id="movie-recs-pager"></div>
       </section>
       <section class="panel">
-        <h2>Recommended shows</h2>
+        <h2>Shows</h2>
         <p class="hint" id="tv-recs-hint"></p>
         <div class="tabs" id="tv-recs-tabs"></div>
+        <div class="sortbar" id="tv-recs-sort"></div>
         <div class="genrefilter" id="tv-recs-genres"></div>
         <div id="tv-recs"></div>
         <div class="pager" id="tv-recs-pager"></div>
       </section>
       <section class="panel">
         <h2>How these are chosen</h2>
-        <p class="hint">Entirely from your own watching: each candidate on
-          your server is scored by how much of your viewing is in its
-          genres, weighted by its rating. Nothing leaves the box and no
-          external service is consulted. What counts as eligible follows
-          the Recommendations setting.</p>
+        <p class="hint">Entirely from your own data, and from three separate
+          things: the community rating, how you rate that sort of thing
+          compared with your own average, and how much of your viewing is in
+          its genres. The middle one is why this differs from a
+          most-watched list — a genre you watch constantly is not thereby a
+          genre you enjoy, and your own scores are the only record of the
+          difference. Genres you have rated little are trusted less, so the
+          picture sharpens as you rate more. Nothing leaves the box and no
+          external service is consulted; what counts as eligible follows the
+          Recommendations setting.</p>
         <div id="rec-profile"></div>
       </section>
     </div>
@@ -2127,10 +2158,97 @@ function recTabs(media) {
    ranked list we are. Deliberately not persisted - a filter is something
    you are doing now, not a preference. */
 const RECS = {
-  movies: { genres: [], offset: 0, pageSize: 20 },
-  tv: { genres: [], offset: 0, pageSize: 20 },
+  movies: { genres: [], exclude: [], sort: "match", yearFrom: "", yearTo: "",
+            minRating: "", offset: 0, pageSize: 20 },
+  tv: { genres: [], exclude: [], sort: "match", yearFrom: "", yearTo: "",
+        minRating: "", offset: 0, pageSize: 20 },
 };
+
+/* "Recommended" is now one ordering among several rather than the name of
+   the section, so it has to say what it means beside the others. */
+const SORTS = [
+  ["match", "Recommended for you"],
+  ["avoid", "Least likely to suit you"],
+  ["rating", "Highest rated"],
+  ["year", "Newest first"],
+  ["name", "A to Z"],
+];
 const GENRE_CHIPS_SHOWN = 12;
+
+function renderSortBar(media, payload) {
+  const prefix = media === "movies" ? "movie" : "tv";
+  const host = $(prefix + "-recs-sort");
+  const state = RECS[media];
+  host.textContent = "";
+
+  /* Any change restarts at the top: page 3 of a different list is not the
+     same place, and leaving the offset alone shows an apparently empty
+     result for a filter that in fact matched plenty. */
+  const rerun = () => { state.offset = 0; loadRecs(media); };
+
+  const order = el("select");
+  SORTS.forEach(([value, label]) => {
+    const option = el("option", { value: value }, label);
+    if (state.sort === value) option.setAttribute("selected", "selected");
+    order.append(option);
+  });
+  order.addEventListener("change", () => {
+    state.sort = order.value;
+    rerun();
+  });
+  const orderLabel = el("label");
+  orderLabel.append(document.createTextNode("Order"), order);
+  host.append(orderLabel);
+
+  const bounds = payload.year_bounds || [1900, 2100];
+  const from = numberField("From", state.yearFrom, bounds[0], (value) => {
+    state.yearFrom = value; rerun();
+  });
+  const to = numberField("to", state.yearTo, bounds[1], (value) => {
+    state.yearTo = value; rerun();
+  });
+  const years = el("label");
+  years.append(document.createTextNode("Year"), from, to);
+  host.append(years);
+
+  const rating = numberField("Any", state.minRating, "", (value) => {
+    state.minRating = value; rerun();
+  }, 0, 10, 0.1);
+  const ratingLabel = el("label");
+  ratingLabel.append(document.createTextNode("Rated at least"), rating);
+  host.append(ratingLabel);
+
+  if (state.yearFrom || state.yearTo || state.minRating
+      || state.sort !== "match" || state.exclude.length
+      || state.genres.length) {
+    const reset = el("button", { type: "button", class: "reset" },
+                      "reset all");
+    reset.addEventListener("click", () => {
+      Object.assign(state, { genres: [], exclude: [], sort: "match",
+                             yearFrom: "", yearTo: "", minRating: "",
+                             offset: 0 });
+      loadRecs(media);
+    });
+    host.append(reset);
+  }
+}
+
+/* Committed on change or Enter rather than on every keystroke, so typing
+   "1985" does not fire four requests and rank on "1". */
+function numberField(placeholder, value, hint, commit, min, max, step) {
+  const input = el("input", { type: "number", placeholder: hint
+    ? String(hint) : placeholder });
+  input.value = value;
+  if (min !== undefined) input.setAttribute("min", min);
+  if (max !== undefined) input.setAttribute("max", max);
+  if (step !== undefined) input.setAttribute("step", step);
+  input.setAttribute("aria-label", placeholder);
+  input.addEventListener("change", () => commit(input.value.trim()));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") commit(input.value.trim());
+  });
+  return input;
+}
 
 function renderGenreFilter(media, payload) {
   const prefix = media === "movies" ? "movie" : "tv";
@@ -2141,28 +2259,55 @@ function renderGenreFilter(media, payload) {
   if (!available.length) return;
 
   const selected = new Set(state.genres.map((g) => g.toLowerCase()));
-  /* Show the common genres, plus any ticked one that has fallen outside
-     the top slice - a filter you cannot see is a filter you cannot undo. */
+  const refused = new Set(state.exclude.map((g) => g.toLowerCase()));
+  /* Show the common genres, plus any chosen or refused one that has fallen
+     outside the top slice - a filter you cannot see is one you cannot undo.
+     A refused genre is especially easy to lose: excluding it drops every
+     title carrying it, so it stops being counted and would otherwise fall
+     off the end of the list it is still acting on. */
   let shown = available.slice(0, state.showAll ? available.length
                                                : GENRE_CHIPS_SHOWN);
   const shownNames = new Set(shown.map((g) => g.genre.toLowerCase()));
   available.forEach((entry) => {
-    if (selected.has(entry.genre.toLowerCase())
-        && !shownNames.has(entry.genre.toLowerCase())) {
+    const key = entry.genre.toLowerCase();
+    if ((selected.has(key) || refused.has(key)) && !shownNames.has(key)) {
       shown = shown.concat([entry]);
+      shownNames.add(key);
+    }
+  });
+  state.exclude.forEach((name) => {
+    if (!shownNames.has(name.toLowerCase())) {
+      shown = shown.concat([{ genre: name, count: 0, gone: true }]);
+      shownNames.add(name.toLowerCase());
     }
   });
 
   shown.forEach((entry) => {
-    const on = selected.has(entry.genre.toLowerCase());
+    const key = entry.genre.toLowerCase();
+    const on = selected.has(key);
+    const off = refused.has(key);
+    /* Three states, one control: unset -> must have -> must not have ->
+       unset. Two separate controls per genre would double the row and make
+       the common case (tick one thing) worse to serve the rare one. */
     const chip = el("button", { type: "button" },
-                    entry.genre + " (" + num(entry.count) + ")");
+                    (off ? "not " : "") + entry.genre
+                    + (entry.gone ? "" : " (" + num(entry.count) + ")"));
     chip.setAttribute("aria-pressed", on ? "true" : "false");
+    if (off) chip.classList.add("nope");
+    chip.title = on ? "Showing only these — click to exclude instead"
+      : off ? "Excluded — click to clear"
+            : "Click to require, click again to exclude";
     chip.addEventListener("click", () => {
-      state.genres = on
-        ? state.genres.filter((g) => g.toLowerCase()
-            !== entry.genre.toLowerCase())
-        : state.genres.concat([entry.genre]);
+      const name = entry.genre;
+      const drop = (list) => list.filter((g) => g.toLowerCase() !== key);
+      if (on) {                       // required -> refused
+        state.genres = drop(state.genres);
+        state.exclude = state.exclude.concat([name]);
+      } else if (off) {               // refused -> neutral
+        state.exclude = drop(state.exclude);
+      } else {                        // neutral -> required
+        state.genres = state.genres.concat([name]);
+      }
       state.offset = 0;          /* a new filter starts at the top again */
       loadRecs(media);
     });
@@ -2178,11 +2323,12 @@ function renderGenreFilter(media, payload) {
     });
     host.append(more);
   }
-  if (state.genres.length) {
+  if (state.genres.length || state.exclude.length) {
     const clear = el("button", { type: "button", class: "clearall" },
-                     "clear filter");
+                     "clear genres");
     clear.addEventListener("click", () => {
       state.genres = [];
+      state.exclude = [];
       state.offset = 0;
       loadRecs(media);
     });
@@ -2203,7 +2349,9 @@ function renderPager(media, payload) {
   host.append(el("span", { class: "range" },
                  "Showing " + num(from) + "–" + num(to) + " of " + num(total)
                  + (state.genres.length
-                    ? " that are " + state.genres.join(" and ") : "")));
+                    ? " that are " + state.genres.join(" and ") : "")
+                 + (state.exclude.length
+                    ? " and not " + state.exclude.join(" or ") : "")));
 
   const back = el("button", { type: "button" }, "‹ Back");
   back.disabled = payload.offset <= 0;
@@ -2220,36 +2368,75 @@ function renderPager(media, payload) {
   host.append(back, forward);
 }
 
+/* What the current ordering is actually doing, in a sentence. The list can
+   now be sorted five ways, and a heading that always claimed "ranked by how
+   well each matches" would be a lie in four of them. */
+function recsHint(media) {
+  const state = RECS[media];
+  const seen = PREFS[media === "tv" ? "recTv" : "recMovies"] === "both";
+  const pool = seen ? "Including things you have already seen."
+                    : "From titles on your server you have not watched.";
+  if (state.sort === "avoid") {
+    return "Ordered by what your own ratings suggest you would like least — "
+      + "genres you score below your own average. " + pool;
+  }
+  if (state.sort === "rating") {
+    return "Ordered by community rating, highest first. " + pool;
+  }
+  if (state.sort === "year") return "Newest first. " + pool;
+  if (state.sort === "name") return "In alphabetical order. " + pool;
+  return "Ordered by what suits you: community rating, weighted by how you "
+    + "rate these genres and how much you watch them. " + pool;
+}
+
+function describeEmpty(state) {
+  const bits = [];
+  if (state.genres.length) bits.push("both " + state.genres.join(" and "));
+  if (state.exclude.length) bits.push("not " + state.exclude.join(" or "));
+  if (state.yearFrom || state.yearTo) {
+    bits.push("from " + (state.yearFrom || "any") + " to "
+              + (state.yearTo || "any"));
+  }
+  if (state.minRating) bits.push("rated " + state.minRating + " or better");
+  if (!bits.length) {
+    return "Nothing to suggest yet — watch a few more titles so there is a "
+      + "taste profile to match against.";
+  }
+  return "Nothing matches " + bits.join(", ") + ". Loosen a filter above.";
+}
+
 async function loadRecs(media) {
   const prefix = media === "movies" ? "movie" : "tv";
   const host = $(prefix + "-recs");
   recTabs(media);
-  $(prefix + "-recs-hint").textContent = PREFS[media === "tv" ? "recTv"
-    : "recMovies"] === "both"
-    ? "Ranked by how well each matches the genres you watch most, including "
-      + "things you have already seen."
-    : "Ranked by how well each matches the genres you watch most, from "
-      + "titles on your server you have not watched.";
+  $(prefix + "-recs-hint").textContent = recsHint(media);
   host.textContent = "";
   host.append(el("p", { class: "empty" }, "Working out what you might like…"));
   try {
     const state = RECS[media];
     const query = ["media=" + media, "seen=" + seenFlag(media),
-                   "offset=" + state.offset, "limit=" + state.pageSize]
-      .concat(state.genres.map((g) => "genre=" + encodeURIComponent(g)));
+                   "offset=" + state.offset, "limit=" + state.pageSize,
+                   "sort=" + encodeURIComponent(state.sort)]
+      .concat(state.genres.map((g) => "genre=" + encodeURIComponent(g)))
+      .concat(state.exclude.map((g) => "not=" + encodeURIComponent(g)));
+    if (state.yearFrom) query.push("from=" + encodeURIComponent(state.yearFrom));
+    if (state.yearTo) query.push("to=" + encodeURIComponent(state.yearTo));
+    if (state.minRating) {
+      query.push("minrating=" + encodeURIComponent(state.minRating));
+    }
     const response = await fetch("/api/recommend?" + query.join("&"),
                                  { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || response.status);
     payload.media = media;
+    renderSortBar(media, payload);
     renderGenreFilter(media, payload);
-    renderSuggestions(host, payload, state.genres.length
-      ? "Nothing is both " + state.genres.join(" and ")
-        + " with the current setting."
-      : "Nothing to suggest yet — watch a few more titles so there is a "
-        + "taste profile to match against.");
+    renderSuggestions(host, payload, describeEmpty(state));
     renderPager(media, payload);
-    if (media === "movies" && payload.profile) renderProfile(payload.profile);
+    if (media === "movies" && payload.profile) {
+      REC_OPINION = { likes: payload.likes, dislikes: payload.dislikes };
+      renderProfile(payload.profile);
+    }
   } catch (err) {
     host.textContent = "";
     host.append(el("p", { class: "empty" },
@@ -2287,7 +2474,7 @@ function renderProfile(profile) {
   host.textContent = "";
   if (!profile.length) return;
   host.append(el("p", { class: "hint" },
-    "Your film taste profile, the weights actually used:"));
+    "What you watch most — the exposure weights actually used:"));
   const bars = el("div", { class: "barlist" });
   const max = profile[0][1] || 1;
   profile.forEach(([genre, weight]) => {
@@ -2303,7 +2490,43 @@ function renderProfile(profile) {
     bars.append(bar);
   });
   host.append(bars);
+  renderOpinion(host, REC_OPINION);
 }
+
+/* The other half of the profile, and the more interesting one: it is drawn
+   from ratings rather than plays, so it can disagree with the bars above -
+   and where it does, that disagreement is exactly what the ordering is
+   for. */
+function renderOpinion(host, opinion) {
+  if (!opinion) return;
+  const likes = opinion.likes || [];
+  const dislikes = opinion.dislikes || [];
+  if (!likes.length && !dislikes.length) {
+    host.append(el("p", { class: "hint" },
+      "Rate a few more films and this will also learn which of those "
+      + "genres you actually enjoy, which is not the same thing."));
+    return;
+  }
+  const line = (label, pairs, cls) => {
+    if (!pairs.length) return;
+    const p = el("p", { class: "hint " + cls });
+    p.append(document.createTextNode(label + " "));
+    pairs.forEach(([genre, value], i) => {
+      if (i) p.append(document.createTextNode(", "));
+      p.append(el("b", {}, genre.replace(/\b\w/g, (c) => c.toUpperCase())));
+      p.append(document.createTextNode(" " + (value > 0 ? "+" : "")
+        + value.toFixed(2)));
+    });
+    host.append(p);
+  };
+  host.append(el("p", { class: "hint" },
+    "How you rate them against your own average — this is what separates "
+    + "\u201cwatched a lot\u201d from \u201cliked\u201d:"));
+  line("Rate above your average:", likes, "");
+  line("Rate below your average:", dislikes, "warnline");
+}
+
+let REC_OPINION = null;
 
 /* ---------- rating what you have watched ---------- */
 

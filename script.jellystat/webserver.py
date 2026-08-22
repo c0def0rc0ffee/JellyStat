@@ -59,6 +59,21 @@ def _addon():
     return xbmcaddon.Addon(ADDON_ID)
 
 
+def _number(query, name, cast=int):
+    """One numeric query parameter, or None when absent or nonsense.
+
+    None rather than a default: these are filters, and "no lower bound" has
+    to stay distinguishable from "a lower bound of zero".
+    """
+    raw = (query.get(name) or [""])[0]
+    if not str(raw).strip():
+        return None
+    try:
+        return cast(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _setting_int(addon, name, default):
     try:
         return int(addon.getSetting(name))
@@ -582,8 +597,13 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     limit = 20
                 genres = [g for g in (query.get("genre") or []) if g.strip()]
-                payload = recommend.recommendations(media, include_seen,
-                                                    limit, offset, genres)
+                exclude = [g for g in (query.get("not") or []) if g.strip()]
+                payload = recommend.recommendations(
+                    media, include_seen, limit, offset, genres, exclude,
+                    sort=(query.get("sort") or ["match"])[0],
+                    year_from=_number(query, "from"),
+                    year_to=_number(query, "to"),
+                    rating_min=_number(query, "minrating", float))
             else:
                 payload = recommend.similar(
                     "movie" if media == "movies" else "tv",
