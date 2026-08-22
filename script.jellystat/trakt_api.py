@@ -6,26 +6,43 @@ everything fetched here drops straight into the same envelope the file
 import already understands: parse, match, show, tick, import. Only the way
 the data arrives is new.
 
-**Signing in.** Trakt's device flow is built for this situation - a box with
-no keyboard and a browser somewhere else. The addon asks Trakt for a code,
-you type that code into trakt.tv/activate on any device, and the addon polls
-until Trakt says you approved it. No password is ever typed into the
-dashboard, and the dashboard never sees one.
+**Signing in.** Two routes, because the dashboard is read on a real computer
+but the addon runs on a television.
+
+- **Redirect** is the ordinary web sign-in and the one worth using: the
+  dashboard sends the browser to Trakt, you approve there, and Trakt sends
+  the browser back to the dashboard's own address carrying a code it
+  swaps for a token. Nothing is typed. It costs one thing - the exact
+  address the browser uses to reach the dashboard has to be registered on
+  the Trakt application as a redirect URI, because Trakt refuses to send a
+  code anywhere it was not told about in advance.
+
+- **Device** is the fallback for when that address cannot be pinned down
+  (it moves with DHCP, or is reached through a tunnel): Trakt issues a
+  short code, you type it into trakt.tv/activate on any device, and the
+  addon polls until Trakt says you approved it.
+
+Either way no password is typed into the dashboard, and the dashboard never
+sees one.
 
 **Why you have to register an application.** Trakt issues credentials per
 application, not per user, and it will not talk to an unregistered one.
 Embedding a secret in an addon published on GitHub would put it in
 everybody's hands, so JellyStat asks for your own instead: create an
-application at trakt.tv/oauth/applications with the redirect URI
-`urn:ietf:wg:oauth:2.0:oob`, then paste its Client ID and Secret into the
-addon's settings. They stay on this box.
+application at trakt.tv/oauth/applications, give it the redirect URI the
+dashboard shows you (and `urn:ietf:wg:oauth:2.0:oob` as well if you want the
+device fallback), then paste its Client ID and Secret in. They stay on this
+box - the dashboard can take them so they need not be typed on a remote
+control, but it writes them to this addon's settings and nowhere else.
 
 Tokens live in the addon's data folder rather than in the settings file,
 because settings are meant to be readable and a refresh token is not.
 """
 
+import hmac
 import json
 import os
+import secrets
 import threading
 import time
 import urllib.error
@@ -40,6 +57,11 @@ import history
 ADDON_ID = "script.jellystat"
 API = "https://api.trakt.tv"
 ACTIVATE_URL = "https://trakt.tv/activate"
+AUTHORIZE_URL = "https://trakt.tv/oauth/authorize"
+# Where Trakt sends the browser back to. The host half is whatever address
+# the dashboard was opened on, so this is only the tail of it.
+CALLBACK_PATH = "/api/trakt/callback"
+OOB_REDIRECT = "urn:ietf:wg:oauth:2.0:oob"
 TOKEN_FILE = "trakt-token.json"
 
 # Trakt's published ceilings: 1000 GETs per five minutes, and pages of up to
@@ -50,9 +72,14 @@ MAX_PAGES = 400
 POLL_CEILING_S = 900
 
 _lock = threading.Lock()
+# "flow" is only so the page can word the wait correctly - "enter this code"
+# against "approve it in the tab that just opened".
 _device = {"state": "idle", "code": None, "url": ACTIVATE_URL,
-           "expires_at": 0, "message": None}
+           "expires_at": 0, "message": None, "flow": None}
 _poller = None
+# The half-finished redirect sign-in: the anti-forgery value Trakt must hand
+# back, and the redirect URI the token exchange has to repeat verbatim.
+_pending = {"state": None, "redirect_uri": None}
 
 
 def log(message, level=xbmc.LOGINFO):
@@ -77,6 +104,31 @@ def client():
     cid = (addon.getSetting("trakt_client_id") or "").strip()
     secret = (addon.getSetting("trakt_client_secret") or "").strip()
     return cid, secret
+
+
+def set_client(client_id, client_secret=None):
+    """Store the Trakt application credentials.
+
+    They live in the addon's settings either way; this exists so they can be
+    pasted with a keyboard instead of spelled out on a remote control.
+
+    An empty secret means "leave the stored one alone", because the page
+    never sends the secret back to the browser and so cannot resubmit it.
+    Passing a non-empty one replaces it.
+    """
+    addon = _addon()
+    client_id = (client_id or "").strip()
+    if not client_id:
+        raise TraktApiError("A Client ID is needed.")
+    addon.setSetting("trakt_client_id", client_id)
+    secret = (client_secret or "").strip()
+    if secret:
+        addon.setSetting("trakt_client_secret", secret)
+    elif not (addon.getSetting("trakt_client_secret") or "").strip():
+        raise TraktApiError(
+            "A Client Secret is needed too - it is on the same Trakt "
+            "application page as the Client ID.")
+    return status()
 
 
 def token_path():
@@ -108,7 +160,9 @@ def forget():
     except OSError:
         pass
     with _lock:
-        _device.update(state="idle", code=None, message=None, expires_at=0)
+        _device.update(state="idle", code=None, message=None, expires_at=0,
+                       flow=None)
+        _pending.update(state=None, redirect_uri=None)
 
 
 # ---------------------------------------------------------------------------
@@ -161,13 +215,91 @@ def status():
         state = dict(_device)
     return {
         "configured": bool(cid and secret),
+        # The Client ID is half of a public pair and the page prefills the
+        # field with it. The secret only ever goes the other way: the page
+        # is told one exists, never what it is.
+        "client_id": cid,
+        "has_secret": bool(secret),
         "connected": bool(token and token.get("access_token")),
         "username": (token or {}).get("username"),
         "connected_at": (token or {}).get("saved_at"),
-        "device": {k: state[k] for k in ("state", "code", "url", "message")},
+        "device": {k: state[k]
+                   for k in ("state", "code", "url", "message", "flow")},
         "expires_in": max(0, int(state["expires_at"] - time.time()))
                       if state["expires_at"] else 0,
     }
+
+
+def authorize_url(redirect_uri):
+    """Start a redirect sign-in and return the Trakt page to send them to.
+
+    `redirect_uri` is the dashboard's own address as this browser sees it.
+    It is remembered because the token exchange must repeat it character for
+    character - Trakt compares the two and refuses a mismatch.
+    """
+    cid, secret = client()
+    if not (cid and secret):
+        raise TraktApiError(
+            "Set a Trakt Client ID and Secret first - there are fields for "
+            "them just above.")
+    # A value only this box knows, handed to Trakt and required back. It is
+    # what stops another page on the network from walking someone through a
+    # sign-in to an account that is not theirs.
+    state = secrets.token_urlsafe(24)
+    with _lock:
+        _pending.update(state=state, redirect_uri=redirect_uri)
+        _device.update(state="waiting", code=None, url=redirect_uri,
+                       flow="redirect", message=None,
+                       expires_at=time.time() + POLL_CEILING_S)
+    return AUTHORIZE_URL + "?" + urllib.parse.urlencode({
+        "response_type": "code",
+        "client_id": cid,
+        "redirect_uri": redirect_uri,
+        "state": state,
+    })
+
+
+def complete(code, state):
+    """Finish a redirect sign-in with what Trakt sent back to the callback."""
+    with _lock:
+        expected = _pending.get("state")
+        redirect_uri = _pending.get("redirect_uri")
+        # Spent on first use, so a callback cannot be replayed.
+        _pending.update(state=None)
+    if not (expected and state) or not hmac.compare_digest(
+            str(state), str(expected)):
+        _fail("That sign-in did not start from this dashboard, so it was "
+              "not completed. Try again from here.")
+        raise TraktApiError("Unrecognised sign-in.")
+    if not code:
+        _fail("Trakt sent no authorisation code back.")
+        raise TraktApiError("No code.")
+    cid, secret = client()
+    http, payload, _ = _request("/oauth/token", body={
+        "code": code, "client_id": cid, "client_secret": secret,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code"}, method="POST")
+    if http != 200 or not payload or not payload.get("access_token"):
+        _fail("Trakt would not exchange the sign-in (HTTP %s). Check that "
+              "%s is listed as a redirect URI on the Trakt application."
+              % (http, redirect_uri))
+        raise TraktApiError("Trakt refused the exchange (HTTP %s)." % http)
+    payload["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    payload["username"] = _whoami(payload.get("access_token"))
+    save_token(payload)
+    with _lock:
+        _device.update(state="connected", code=None, message=None,
+                       flow="redirect")
+    log("Connected to Trakt as %s" % payload.get("username"))
+    return status()
+
+
+def denied(reason=None):
+    """Trakt sent the browser back with a refusal rather than a code."""
+    with _lock:
+        _pending.update(state=None)
+    _fail("Sign-in was not granted on Trakt%s."
+          % (": %s" % reason if reason else ""))
 
 
 def begin():
@@ -187,6 +319,7 @@ def begin():
             "ID." % code)
     with _lock:
         _device.update(state="waiting",
+                       flow="device",
                        code=payload.get("user_code"),
                        url=payload.get("verification_url") or ACTIVATE_URL,
                        expires_at=time.time() + (payload.get("expires_in")

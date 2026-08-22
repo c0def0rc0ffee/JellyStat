@@ -230,6 +230,27 @@ nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
   border-radius: 10px; padding: 10px 16px; display: inline-block;
   margin: 4px 0 8px; }
 
+/* The dashboard's own address, shown so it can be copied into Trakt's
+   redirect URI field. Long, and every character of it matters, so it wraps
+   anywhere rather than overflowing the panel. */
+.uri { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px; background: var(--bg); border: 1px dashed var(--accent);
+  border-radius: 8px; padding: 8px 11px; display: inline-block;
+  margin: 2px 0 10px; word-break: break-all; user-select: all;
+  max-width: 100%; }
+.creds { margin-top: 14px; border-top: 1px solid var(--line);
+  padding-top: 12px; }
+.creds summary { font-size: 13px; color: var(--ink-dim); cursor: pointer; }
+.creds[open] summary { margin-bottom: 10px; }
+.credrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.credfield { flex: 1; min-width: 210px; font-size: 13px; padding: 8px 10px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--bg);
+  color: var(--ink); font-family: inherit; }
+.credfield:focus-visible { outline: 2px solid var(--accent);
+  outline-offset: 1px; }
+.credrow .say { font-size: 12.5px; color: var(--ink-dim); }
+.credrow .say.bad { color: var(--warn); }
+
 /* Trakt import */
 .catlist { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
 .cat { display: flex; gap: 12px; align-items: flex-start;
@@ -785,11 +806,10 @@ button.danger { color: var(--warn); }
       <h2>Connect to Trakt</h2>
       <p class="hint">Sign in once and JellyStat can pull your history and
         ratings straight from Trakt, with no export file. Trakt issues
-        credentials per application, so create one at
-        <b>trakt.tv/oauth/applications</b> with the redirect URI
-        <code>urn:ietf:wg:oauth:2.0:oob</code>, then paste its Client ID and
-        Secret into the addon's settings (Web dashboard → Trakt). They stay
-        on this box.</p>
+        credentials per application rather than per person, so you register
+        one of your own at <b>trakt.tv/oauth/applications</b> and set it up
+        below — all of it from here, with a keyboard, rather than on the
+        television. Everything you paste stays on this box.</p>
       <div id="traktconn"></div>
     </section>
 
@@ -2990,6 +3010,9 @@ function watchReconcile() {
     if (!RECON || !RECON.job || RECON.job.state !== "running") {
       clearInterval(reconTimer);
       reconTimer = null;
+      // One read after the job is known to be over, so the card is never
+      // left holding counts gathered while it was still writing.
+      loadReconcile();
     }
   }, 2000);
 }
@@ -2998,6 +3021,7 @@ function watchReconcile() {
 
 let CONN = null;
 let connTimer = null;
+let CREDNOTE = { text: "", bad: false };
 
 async function loadConnection() {
   try {
@@ -3024,7 +3048,7 @@ function renderConnection() {
   } else if (!CONN.configured) {
     who.append(el("div", {}, "Not set up"));
     who.append(el("div", { class: "sub" },
-      "Add a Trakt Client ID and Secret in the addon's settings first."));
+      "Paste the Trakt application's Client ID and Secret below."));
   } else {
     who.append(el("div", {}, "Not connected"));
     who.append(el("div", { class: "sub" },
@@ -3045,10 +3069,20 @@ function renderConnection() {
     });
     box.append(fetchBtn, off, say);
   } else if (CONN.configured) {
+    /* A plain navigation, not fetch: the server answers with a redirect to
+       Trakt, and the whole point is that the browser follows it. */
     const go = el("button", { class: "action", type: "button" },
                   "Sign in to Trakt");
-    go.addEventListener("click", async () => {
-      go.disabled = true;
+    go.addEventListener("click", () => {
+      window.location.href = "/api/trakt/authorize";
+    });
+    /* The fallback, for when this dashboard's address cannot be registered
+       with Trakt - it moves, or is reached through something that rewrites
+       it. Trakt reads a typed code from anywhere. */
+    const viaCode = el("button", { class: "action", type: "button" },
+                        "Use a code instead");
+    viaCode.addEventListener("click", async () => {
+      viaCode.disabled = true;
       try {
         const response = await fetch("/api/trakt/connect", { method: "POST" });
         const data = await response.json();
@@ -3058,13 +3092,20 @@ function renderConnection() {
         watchConnection();
       } catch (err) {
         host.append(el("p", { class: "empty" }, err.message));
-      } finally { go.disabled = false; }
+      } finally { viaCode.disabled = false; }
     });
-    box.append(go);
+    box.append(go, viaCode);
   }
   host.append(box);
 
   const device = CONN.device || {};
+  if (!CONN.connected && device.state === "waiting"
+      && device.flow === "redirect") {
+    host.append(el("p", { class: "hint" },
+      "Waiting for Trakt. If nothing happened, the application may not "
+      + "list this dashboard's address as a redirect URI - add it and try "
+      + "again."));
+  }
   if (!CONN.connected && device.state === "waiting" && device.code) {
     const steps = el("div");
     steps.append(el("p", { class: "hint" },
@@ -3081,6 +3122,79 @@ function renderConnection() {
   if (device.state === "failed" && device.message) {
     host.append(el("p", { class: "empty" }, device.message));
   }
+
+  host.append(renderTraktCreds());
+}
+
+/* The Trakt application's own credentials.
+
+   These belong to an application you register, not to your Trakt account,
+   and they have to be entered somewhere. Kodi's settings screen means
+   spelling out a 64-character secret on a remote control, so the same two
+   fields are offered here, where there is a keyboard. They are written to
+   the addon's settings exactly as if they had been typed there. */
+function renderTraktCreds() {
+  const wrap = el("details", { class: "creds" });
+  /* Saving re-renders the whole panel, because storing credentials is what
+     turns "Not set up" into a sign-in button. CREDNOTE carries the outcome
+     across that rebuild, and holds the section open so it can be read. */
+  if (!CONN.configured || CREDNOTE.text) wrap.setAttribute("open", "open");
+  wrap.append(el("summary", {}, CONN.configured
+    ? "Trakt application credentials" : "Set up the Trakt application"));
+
+  const redirect = window.location.origin + "/api/trakt/callback";
+  const steps = el("p", { class: "hint" });
+  steps.append(document.createTextNode(
+    "Create an application at trakt.tv/oauth/applications and give it this "
+    + "redirect URI, exactly as shown \u2014 Trakt will not send a sign-in "
+    + "anywhere it was not told about first:"));
+  wrap.append(steps);
+  wrap.append(el("div", { class: "uri" }, redirect));
+  wrap.append(el("p", { class: "hint" },
+    "Add urn:ietf:wg:oauth:2.0:oob as a second redirect URI if you want the "
+    + "code fallback as well. Then paste the application's Client ID and "
+    + "Secret here; they are stored on this box and sent nowhere else."));
+
+  const id = el("input", { type: "text", class: "credfield",
+                           placeholder: "Client ID",
+                           autocomplete: "off", spellcheck: "false" });
+  id.value = CONN.client_id || "";
+  const secret = el("input", { type: "password", class: "credfield",
+                               autocomplete: "new-password",
+                               placeholder: CONN.has_secret
+                                 ? "Client Secret (stored \u2014 leave blank "
+                                   + "to keep)"
+                                 : "Client Secret" });
+  const save = el("button", { class: "action", type: "button" }, "Save");
+  const say = el("span", { class: "say" + (CREDNOTE.bad ? " bad" : "") },
+                  CREDNOTE.text);
+  save.addEventListener("click", async () => {
+    save.disabled = true;
+    say.className = "say";
+    say.textContent = "Saving\u2026";
+    try {
+      const response = await fetch("/api/trakt/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: id.value,
+                               client_secret: secret.value }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || response.status);
+      CONN = data;
+      CREDNOTE = { text: "Saved.", bad: false };
+      renderConnection();
+    } catch (err) {
+      CREDNOTE = { text: err.message, bad: true };
+      say.className = "say bad";
+      say.textContent = err.message;
+    } finally { save.disabled = false; }
+  });
+
+  const row = el("div", { class: "credrow" });
+  row.append(id, secret, save, say);
+  wrap.append(row);
+  return wrap;
 }
 
 /* Poll while a sign-in is pending, and stop as soon as it resolves. */

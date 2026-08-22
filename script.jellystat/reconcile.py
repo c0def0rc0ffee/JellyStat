@@ -45,7 +45,17 @@ def log(message, level=xbmc.LOGINFO):
 # ---------------------------------------------------------------------------
 
 def survey():
-    """How the two sides currently compare."""
+    """How the two sides currently compare.
+
+    The job state is read *before* the counts, never after. A running push
+    is committing rows while this query runs, and reading the state last
+    could pair counts taken at the start of the job with a state of
+    "finished" - a page that then says "Pushed 60 of 60" while still
+    offering to push the same 60, and stops polling, so it never corrects
+    itself. Read this way round, "finished" always means the counts below
+    were taken after the last write.
+    """
+    job = progress()
     connection = library.connect()
     try:
         row = connection.execute(
@@ -78,7 +88,7 @@ def survey():
         "agreeing": row[3] or 0,
         "only_on_jellyfin": row[4] or 0,
         "examples": examples,
-        "job": progress(),
+        "job": job,
     }
 
 
@@ -135,16 +145,27 @@ def start(action="push", scope="all"):
 def _run(action, targets):
     failed = 0
     for index, (item_id, name, score) in enumerate(targets, 1):
+        problem = None
         try:
             # ratings.rate() is the one place that knows how to write a
             # score to Jellyfin and record what happened, so reconciling
             # goes through it rather than reimplementing the call.
-            ratings.rate(item_id, None if action == "clear" else score,
-                         push=True, keep_local=action == "clear")
+            result = ratings.rate(
+                item_id, None if action == "clear" else score,
+                push=True, keep_local=action == "clear")
+            # It reports a refused write in its result rather than raising,
+            # because for someone rating one film a server that is down
+            # must not cost them the score - it is kept here and that is
+            # not an error. For a reconcile it is: the whole point was to
+            # make Jellyfin stop disagreeing, and it still does.
+            if not result.get("synced"):
+                problem = result.get("state") or "Jellyfin did not take it"
         except Exception as err:
+            problem = err
+        if problem is not None:
             failed += 1
             if failed <= 3:
-                log("Reconcile could not %s %s: %s" % (action, name, err),
+                log("Reconcile could not %s %s: %s" % (action, name, problem),
                     xbmc.LOGWARNING)
         with _lock:
             _job["done"] = index

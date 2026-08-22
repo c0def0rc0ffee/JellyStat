@@ -165,6 +165,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "Not found", "text/plain; charset=utf-8")
             return
 
+        # Trakt sends the browser back here from its own site, and the login
+        # cookie is SameSite=Strict, so it will not be sent on that hop. The
+        # gate would turn every redirect sign-in into a 401. It is safe to
+        # let this one through: the callback carries nothing but a one-shot
+        # unguessable value this box issued to an already-authorised session
+        # a moment earlier, and trakt_api rejects anything else.
+        if route.path == trakt_api.CALLBACK_PATH:
+            self._serve_trakt_callback(parse_qs(route.query))
+            return
+
         if password and not self._authorised(password):
             self._send_json(401, {"error": "Password required."})
             return
@@ -216,6 +226,8 @@ class Handler(BaseHTTPRequestHandler):
                     (q.get("series") or [""])[0],
                     (q.get("season") or [None])[0]),
                 parse_qs(route.query))
+        elif route.path == "/api/trakt/authorize":
+            self._serve_trakt_authorize()
         elif route.path == "/api/trakt/status":
             try:
                 self._send_json(200, trakt_api.status())
@@ -267,6 +279,16 @@ class Handler(BaseHTTPRequestHandler):
                                            "accepted."})
             return
         path = urlparse(self.path).path
+        if path == "/login":
+            self._login()
+            return
+        # Every other POST changes something - a rating, an import, now a
+        # set of Trakt credentials - so the gate goes here, above the
+        # routes, rather than part-way down the list.
+        password = self._password()
+        if password and not self._authorised(password):
+            self._send_json(401, {"error": "Password required."})
+            return
         if path == "/api/rate":
             self._serve_rate()
             return
@@ -282,6 +304,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/trakt/connect":
             try:
                 self._send_json(200, trakt_api.begin())
+            except trakt_api.TraktApiError as err:
+                self._send_json(400, {"error": str(err)})
+            return
+        if path == "/api/trakt/settings":
+            body = self._json_body()
+            try:
+                self._send_json(200, trakt_api.set_client(
+                    body.get("client_id"), body.get("client_secret")))
             except trakt_api.TraktApiError as err:
                 self._send_json(400, {"error": str(err)})
             return
@@ -307,13 +337,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/backup/create":
             self._send_json(200, {"backup": backup.create("manual",
                                                           "requested")})
-            return
-        if path == "/login":
-            self._login()
-            return
-        password = self._password()
-        if password and not self._authorised(password):
-            self._send_json(401, {"error": "Password required."})
             return
         if path == "/api/import/stage":
             self._import_stage()
@@ -679,6 +702,55 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, blob, "application/octet-stream",
                    [("Content-Disposition",
                      'attachment; filename="%s"' % name)])
+
+    def _dashboard_origin(self):
+        """The address this browser is reaching the dashboard on.
+
+        Taken from the request rather than from the settings because it is
+        the one thing known to work: whatever the reader typed got here, so
+        Trakt sending them back to it will get here too. It is also the
+        string that has to be registered on the Trakt application, which is
+        why the page shows it rather than guessing on the reader's behalf.
+        """
+        host = (self.headers.get("Host") or "").strip()
+        if not host:
+            address, port = self.server.server_address[:2]
+            host = "%s:%s" % (address, port)
+        return "http://" + host
+
+    def _redirect(self, location):
+        self._send(302, b"", "text/plain; charset=utf-8",
+                   [("Location", location)])
+
+    def _serve_trakt_authorize(self):
+        """Send the browser to Trakt to approve the sign-in."""
+        try:
+            url = trakt_api.authorize_url(
+                self._dashboard_origin() + trakt_api.CALLBACK_PATH)
+        except trakt_api.TraktApiError as err:
+            self._send_json(400, {"error": str(err)})
+            return
+        self._redirect(url)
+
+    def _serve_trakt_callback(self, query):
+        """Where Trakt sends the browser back, approved or not.
+
+        Every ending is a redirect to the dashboard: the outcome is already
+        in /api/trakt/status, which the page reads on load, so it can say
+        what happened in its own words instead of on a bare white page.
+        """
+        error = (query.get("error") or [""])[0]
+        if error:
+            trakt_api.denied((query.get("error_description") or [""])[0]
+                             or error)
+        else:
+            try:
+                trakt_api.complete((query.get("code") or [""])[0],
+                                   (query.get("state") or [""])[0])
+            except trakt_api.TraktApiError as err:
+                log("Trakt sign-in did not complete: %s" % err,
+                    xbmc.LOGWARNING)
+        self._redirect("/")
 
     def _serve_trakt_fetch(self):
         """Pull everything from Trakt and stage it, exactly as a file would.
