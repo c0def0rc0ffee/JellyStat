@@ -26,8 +26,11 @@ import urllib.request
 from collections import OrderedDict
 
 import xbmc
+import xbmcaddon
 
 import main as core
+
+ADDON_ID = "script.jellystat"
 
 # Jellyfin ids are 32 hex characters. Anything else never reaches a URL.
 ID_RE = re.compile(r"^[0-9a-f]{32}$", re.I)
@@ -99,6 +102,77 @@ def media_info(item):
                     if source.get("Size") else None),
     })
     return info if info.get("label") else None
+
+
+def _size_label(size):
+    """Bytes as something readable, without pretending to precision."""
+    if not size:
+        return None
+    gb = size / 1073741824.0
+    if gb >= 1:
+        return "%.1f GB" % gb
+    return "%d MB" % round(size / 1048576.0)
+
+
+def files(item_id):
+    """Every file Jellyfin holds for one item: where it is, how big, what
+    quality.
+
+    Exists for the duplicate note. Knowing a film is in the library twice is
+    only half an answer - the useful half is which two files, so the worse
+    one can be deleted, and that means the path, the size and the quality
+    side by side.
+
+    Jellyfin only returns Path to a user allowed to see it, so this asks
+    with the addon's own API key when one is configured (the same key the
+    community-rating write needs) and falls back to the ordinary user
+    token. Where the path is withheld, everything else is still returned
+    and the caller says so rather than showing a blank.
+    """
+    if not valid_id(item_id):
+        raise MediaError("Not a Jellyfin id.")
+    creds = core.get_credentials()
+    params = {"Fields": "MediaSources,Path"}
+    base, key = _admin_credentials()
+    if base and key:
+        item = core.api_get(base, key, "/Items/%s" % item_id, params)
+    else:
+        item = core.api_get(creds["base"], creds["token"],
+                            "/Users/%s/Items/%s" % (creds["user_id"],
+                                                    item_id), params)
+    out = []
+    for source in (item.get("MediaSources") or []):
+        stream = _video_stream(source)
+        quality = resolution_of(stream.get("Width"),
+                                stream.get("Height")) or {}
+        path = source.get("Path") or item.get("Path") or None
+        out.append({
+            "path": path,
+            # Both separators: the server may be running on either, and the
+            # box reading this is not necessarily the one holding the file.
+            "filename": path.replace("\\", "/").rsplit("/", 1)[-1]
+                        if path else None,
+            "size": source.get("Size"),
+            "size_label": _size_label(source.get("Size")),
+            "quality": quality.get("label"),
+            "width": quality.get("width"),
+            "height": quality.get("height"),
+            "codec": (stream.get("Codec") or "").upper() or None,
+            "range": stream.get("VideoRange"),
+            "container": (source.get("Container") or "").upper() or None,
+        })
+    return out
+
+
+def _admin_credentials():
+    """The addon's configured API key, which may see paths a user cannot."""
+    try:
+        addon = xbmcaddon.Addon(ADDON_ID)
+    except Exception:
+        return None, None
+    base = (addon.getSetting("server_url") or "").strip().rstrip("/")
+    key = (addon.getSetting("api_key") or "").strip()
+    return (base, key) if (base and key) else (None, None)
 
 
 def runtime_minutes(item):

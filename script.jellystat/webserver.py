@@ -504,6 +504,26 @@ class Handler(BaseHTTPRequestHandler):
             detail["media_detail"] = artwork.detail(item_id)
         except Exception as err:
             log("No live detail for %s: %s" % (item_id, err), xbmc.LOGDEBUG)
+        self._attach_files(detail)
+
+    def _attach_files(self, detail):
+        """Where each copy of a duplicated film actually lives.
+
+        Only for duplicates: the path, size and quality are what make one
+        copy the keeper and the other the spare, and asking Jellyfin for
+        them on every film to answer a question almost no film raises would
+        be a request per page for nothing.
+        """
+        copies = detail.get("duplicates")
+        if not copies:
+            return
+        for item in [detail] + list(copies):
+            try:
+                item["files"] = artwork.files(item.get("id"))
+            except Exception as err:
+                item["files"] = None
+                log("No file detail for %s: %s" % (item.get("id"), err),
+                    xbmc.LOGDEBUG)
 
     def _serve_rate(self):
         """Save one score and report honestly what reached Jellyfin."""
