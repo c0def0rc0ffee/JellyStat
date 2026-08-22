@@ -3101,9 +3101,8 @@ function renderConnection() {
       ? "Signed in " + fmtStamp(CONN.connected_at) : ""));
   } else if (waiting) {
     who.append(el("div", {}, "Waiting for Trakt"));
-    who.append(el("div", { class: "sub" }, device.flow === "device"
-      ? "Enter the code below on any device."
-      : "Approve the sign-in in the tab that opened."));
+    who.append(el("div", { class: "sub" },
+      "Enter the code below on Trakt to finish."));
   } else {
     who.append(el("div", {}, "Not connected"));
     who.append(el("div", { class: "sub" },
@@ -3124,17 +3123,26 @@ function renderConnection() {
   } else {
     const go = el("button", { class: "action primary", type: "button" },
                    waiting ? "Connect again" : "Connect to Trakt");
-    go.addEventListener("click", () => connectToTrakt());
+    go.addEventListener("click", () => connectToTrakt(go));
     box.append(go);
   }
   host.append(box);
 
   if (waiting && device.code) {
+    const url = device.url || "https://trakt.tv/activate";
     const steps = el("div");
     steps.append(el("p", { class: "hint" },
-      "On any device, open " + (device.url || "trakt.tv/activate")
-      + " and enter this code. This page will notice when you have."));
+      "Open Trakt on any device with a keyboard, enter this code, and "
+      + "approve it. This page notices by itself \u2014 there is nothing to "
+      + "come back and press."));
     steps.append(el("div", { class: "pincode" }, device.code));
+    const row = el("div", { class: "filerow" });
+    /* Opened in a new tab rather than navigating: this page is the thing
+       watching for the approval. */
+    row.append(el("a", { class: "action primary", href: url,
+                         target: "_blank", rel: "noopener noreferrer" },
+                   "Open " + url.replace(/^https?:\/\//, "")));
+    steps.append(row);
     if (CONN.expires_in) {
       steps.append(el("p", { class: "hint" },
         "The code expires in " + Math.round(CONN.expires_in / 60)
@@ -3149,10 +3157,10 @@ function renderConnection() {
   host.append(renderTraktSetup());
 }
 
-/* The one button. Sending someone to Trakt before the application exists
-   would land them on an error page there, so an unconfigured addon opens
-   the setup instead of leaving. */
-function connectToTrakt() {
+/* The one button. Asking Trakt for a code before the application exists
+   would only produce an error, so an unconfigured addon opens the setup
+   instead. */
+async function connectToTrakt(button) {
   if (!CONN.configured) {
     CREDNOTE = { text: "Add the application's Client ID and Secret first.",
                  bad: true };
@@ -3160,9 +3168,18 @@ function connectToTrakt() {
     $("traktsetup").scrollIntoView({ behavior: "smooth", block: "center" });
     return;
   }
-  /* A plain navigation, not fetch: the server answers with a redirect to
-     Trakt, and the whole point is that the browser follows it. */
-  window.location.href = "/api/trakt/authorize";
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch("/api/trakt/connect", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || response.status);
+    CONN = data;
+    renderConnection();
+    watchConnection();
+  } catch (err) {
+    CREDNOTE = { text: err.message, bad: true };
+    renderConnection();
+  }
 }
 
 /* Everything that is true but rarely wanted: the Trakt application's own
@@ -3170,18 +3187,25 @@ function connectToTrakt() {
    and signing out. Collapsed unless something here needs attention. */
 function renderTraktSetup() {
   const wrap = el("details", { class: "creds", id: "traktsetup" });
-  if (!CONN.configured || CREDNOTE.text) wrap.setAttribute("open", "open");
-  wrap.append(el("summary", {}, CONN.configured
-    ? "Trakt application settings"
-    : "Set up the Trakt application \u2014 needed once"));
+  const needed = !CONN.configured;
+  if (needed || CREDNOTE.text) wrap.setAttribute("open", "open");
+  wrap.append(el("summary", {}, needed
+    ? "Set up the Trakt application \u2014 needed once"
+    : CONN.builtin ? "Use your own Trakt application instead"
+                   : "Trakt application settings"));
 
-  const redirect = window.location.origin + "/api/trakt/callback";
-  wrap.append(el("p", { class: "hint" },
-    "Trakt issues credentials per application rather than per person, so "
-    + "register one at trakt.tv/oauth/applications and give it this redirect "
-    + "URI, exactly as shown \u2014 Trakt will not send a sign-in anywhere "
-    + "it was not told about first:"));
-  wrap.append(el("div", { class: "uri" }, redirect));
+  wrap.append(el("p", { class: "hint" }, CONN.builtin && !needed
+    ? "JellyStat signs in through its own Trakt application, so there is "
+      + "nothing here you need to do. Put your own Client ID and Secret in "
+      + "if you would rather not share its rate limit; they take priority "
+      + "over the built-in pair."
+    : "Trakt issues credentials per application rather than per person, so "
+      + "register one at trakt.tv/oauth/applications. Give it any name, and "
+      + "the redirect URI below \u2014 signing in never uses it, but Trakt's "
+      + "form insists on a value:"));
+  if (!(CONN.builtin && !needed)) {
+    wrap.append(el("div", { class: "uri" }, "urn:ietf:wg:oauth:2.0:oob"));
+  }
   wrap.append(el("p", { class: "hint" },
     "Then paste the application's Client ID and Secret here. They are stored "
     + "on this box and sent nowhere else."));
@@ -3235,28 +3259,6 @@ function renderTraktSetup() {
       loadConnection();
     });
     extras.append(off);
-  } else if (CONN.configured) {
-    /* For when this dashboard's address cannot be registered with Trakt -
-       it moves, or is reached through something that rewrites it. Trakt
-       reads a typed code from anywhere. */
-    const viaCode = el("button", { class: "action", type: "button" },
-                        "Sign in with a code instead");
-    const note = el("span", { class: "say" });
-    viaCode.addEventListener("click", async () => {
-      viaCode.disabled = true;
-      try {
-        const response = await fetch("/api/trakt/connect", { method: "POST" });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || response.status);
-        CONN = data;
-        renderConnection();
-        watchConnection();
-      } catch (err) {
-        note.className = "say bad";
-        note.textContent = err.message;
-      } finally { viaCode.disabled = false; }
-    });
-    extras.append(viaCode, note);
   }
   if (extras.childNodes.length) wrap.append(extras);
   return wrap;
