@@ -1924,6 +1924,19 @@ function linkToShow(name) {
 
 /* Suggestion lists: recommendations (a whole medium) and similar (one
    title) share their rendering and their seen/new setting. */
+/* The genres printed on a card. Ticked filter genres always come first:
+   a card that appeared BECAUSE it is Science Fiction must say so, even
+   when that tag sits fourth in Jellyfin's ordering and the card only has
+   room for three. */
+function cardGenres(item, payload, limit) {
+  const selected = new Set(payload.genres_selected || []);
+  const matched = item.genres.filter((g) => selected.has(g.toLowerCase()));
+  const rest = item.genres.filter((g) => !selected.has(g.toLowerCase()));
+  const shown = matched.concat(rest).slice(0, Math.max(limit, matched.length));
+  const hidden = item.genres.length - shown.length;
+  return shown.join(", ") + (hidden > 0 ? " +" + hidden : "");
+}
+
 function renderSuggestions(host, payload, emptyText) {
   host.textContent = "";
   if (payload.offline) {
@@ -1941,7 +1954,7 @@ function renderSuggestions(host, payload, emptyText) {
     if (item.id) card.append(art(item.id, "Primary", 240, "poster", item.name));
     card.append(el("div", { class: "t" }, item.name));
     card.append(el("div", { class: "m" },
-      [item.year, item.genres.slice(0, 2).join(", "),
+      [item.year, cardGenres(item, payload, 3),
        item.rating ? "★ " + item.rating.toFixed(1) : null]
         .filter(Boolean).join(" · ")));
     if (item.seen) card.append(el("span", { class: "seen" }, "seen"));
