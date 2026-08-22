@@ -32,6 +32,7 @@ library anyway, so mirroring adds no Jellyfin traffic at all.
 """
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -448,12 +449,41 @@ def _like(term):
     return "%" + cleaned + "%"
 
 
-def search(term, limit=8):
+def relevance(name, term):
+    """How well a title answers what was typed. Lower is better.
+
+    Ordering by recency, as this once did, answers a question nobody asked:
+    typing "star" offered Star Trek Into Darkness before Star Wars because
+    it had been played more recently, and an exact title match could be
+    beaten by anything watched last week. Match quality first, and let
+    recency break the ties it is actually good for.
+    """
+    name = (name or "").lower()
+    term = (term or "").lower().strip()
+    if not term:
+        return 4
+    if name == term:
+        return 0
+    if name.startswith(term):
+        return 1
+    # A word starting with the term: "star" should find "Lone Star" ahead of
+    # "Starship", but well behind "Star Wars".
+    if any(word.startswith(term) for word in re.split(r"[^\w']+", name)):
+        return 2
+    return 3
+
+
+def search(term, limit=25):
     """Films and shows matching the term -> {movies: [...], shows: [...]}.
 
-    Searches the mirror, not Jellyfin, so it answers instantly and works
-    offline; the mirror holds every watched title anyway. Shows are grouped
-    from their episodes, ranked by how much of them has been watched.
+    Searches the mirror, so it answers instantly and works offline. The
+    mirror holds only what has been *watched*, which is why the caller
+    (webserver) merges in the unwatched side from the catalogue: a film
+    sitting on the server unwatched is exactly the one somebody is most
+    likely to be searching for, and for a long time it could not be found
+    at all.
+
+    Shows are grouped from their episodes.
     """
     if not (term or "").strip():
         return {"movies": [], "shows": []}
@@ -461,21 +491,37 @@ def search(term, limit=8):
     connection = connect()
     movies = [{
         "id": row[0], "name": row[1], "year": row[2], "rating": row[3],
-        "last_played": row[4], "play_count": row[5],
+        "last_played": row[4], "play_count": row[5], "seen": True,
     } for row in connection.execute(
         "SELECT id, name, year, rating, last_played, play_count FROM items "
-        "WHERE media = 'movie' AND LOWER(name) LIKE ? ESCAPE '\\' "
-        "ORDER BY last_played DESC LIMIT ?", (pattern, limit))]
+        "WHERE media = 'movie' AND LOWER(name) LIKE ? ESCAPE '\\'",
+        (pattern,))]
     shows = [{
         "name": row[0], "episodes": row[1], "last_played": row[2],
+        "seen": True,
     } for row in connection.execute(
         "SELECT series_name, COUNT(*), MAX(last_played) FROM items "
         "WHERE media = 'episode' AND series_name IS NOT NULL "
         "AND LOWER(series_name) LIKE ? ESCAPE '\\' "
-        "GROUP BY series_name ORDER BY MAX(last_played) DESC LIMIT ?",
-        (pattern, limit))]
+        "GROUP BY series_name", (pattern,))]
     connection.close()
-    return {"movies": movies, "shows": shows}
+    return {"movies": rank_hits(movies, term, limit),
+            "shows": rank_hits(shows, term, limit)}
+
+
+def rank_hits(hits, term, limit):
+    """Best match first; within equal matches, most recently watched.
+
+    Done as two stable sorts rather than one clever key. The tie-break
+    wants timestamps newest-first while everything above it wants
+    ascending order, and a single key cannot express both without
+    inverting strings by hand.
+    """
+    hits.sort(key=lambda hit: ((hit.get("last_played") or ""),
+                               (hit["name"] or "").lower()), reverse=True)
+    hits.sort(key=lambda hit: (relevance(hit["name"], term),
+                               not hit.get("seen")))
+    return hits[:limit]
 
 
 def _sittings(connection, show, title=None):

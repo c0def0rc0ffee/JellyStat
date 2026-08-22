@@ -461,6 +461,58 @@ def _mirror_as_items(media):
 
 
 # ---------------------------------------------------------------------------
+# Search across the whole library, watched or not
+# ---------------------------------------------------------------------------
+
+def search(term, limit=25):
+    """Mirror hits plus everything on the server that has never been played.
+
+    The mirror is a record of what was watched, so on its own it cannot
+    answer "do I have this?" - only "have I seen this?". Those are different
+    questions and the search box is nearly always asking the first.
+
+    Lives here rather than in library.py because this is where the catalogue
+    is fetched and cached; library.py is imported by this module, so it
+    cannot reach back the other way.
+
+    A server that cannot be reached is not an error: the mirror's answer is
+    still a true answer, just a narrower one.
+    """
+    hits = library.search(term, limit)
+    needle = (term or "").strip().lower()
+    if not needle:
+        return hits
+    try:
+        movies, series = catalog()
+    except core.JellyStatError:
+        hits["partial"] = True     # watched titles only; server unreachable
+        return hits
+
+    known = {(movie.get("id") or "") for movie in hits["movies"]}
+    seen_shows = {(show["name"] or "").strip().lower()
+                  for show in hits["shows"]}
+    for item in movies:
+        if needle not in (item.get("Name") or "").lower():
+            continue
+        if item.get("Id") in known:
+            continue
+        hits["movies"].append({
+            "id": item.get("Id"), "name": item.get("Name") or "?",
+            "year": item.get("ProductionYear"),
+            "rating": item.get("CommunityRating"),
+            "last_played": None, "play_count": 0, "seen": False,
+        })
+    for item in series:
+        name = (item.get("Name") or "").strip()
+        if needle not in name.lower() or name.lower() in seen_shows:
+            continue
+        hits["shows"].append({"name": name, "episodes": 0,
+                              "last_played": None, "seen": False})
+    return {"movies": library.rank_hits(hits["movies"], term, limit),
+            "shows": library.rank_hits(hits["shows"], term, limit)}
+
+
+# ---------------------------------------------------------------------------
 # Similar titles
 # ---------------------------------------------------------------------------
 

@@ -3738,7 +3738,10 @@ async function runSearch(term) {
   box.textContent = "";
   const total = hits.movies.length + hits.shows.length;
   if (!total) {
-    box.append(el("div", { class: "group" }, "Nothing watched matches that"));
+    box.append(el("div", { class: "group" },
+      hits.partial ? "Nothing watched matches that (server unreachable, so "
+                     + "unwatched titles could not be searched)"
+                   : "Nothing on your server matches that"));
     box.classList.add("open");
     return;
   }
@@ -3748,10 +3751,16 @@ async function runSearch(term) {
       const hit = el("button", { class: "hit", type: "button" });
       hit.append(el("div", {}, movie.name
         + (movie.year ? " (" + movie.year + ")" : "")));
+      /* An unwatched title has no play to report, and saying nothing there
+         reads as a missing value rather than the fact it is. */
       hit.append(el("div", { class: "sub" },
-        (movie.last_played ? "last watched "
-          + fmtDay(movie.last_played) : "")
-        + (movie.play_count > 1 ? " · " + movie.play_count + " plays" : "")));
+        movie.seen === false
+          ? "on your server · not watched"
+              + (movie.rating ? " · rated " + movie.rating.toFixed(1) : "")
+          : (movie.last_played ? "last watched " + fmtDay(movie.last_played)
+                               : "watched")
+            + (movie.play_count > 1 ? " · " + movie.play_count + " plays"
+                                    : "")));
       hit.addEventListener("click", () => openMovie(movie.id));
       box.append(hit);
     });
@@ -3762,9 +3771,11 @@ async function runSearch(term) {
       const hit = el("button", { class: "hit", type: "button" });
       hit.append(el("div", {}, show.name));
       hit.append(el("div", { class: "sub" },
-        plural(show.episodes, "episode") + " watched"
-        + (show.last_played ? " · last "
-          + fmtDay(show.last_played) : "")));
+        show.seen === false
+          ? "on your server · not watched"
+          : plural(show.episodes, "episode") + " watched"
+            + (show.last_played ? " · last " + fmtDay(show.last_played)
+                                : "")));
       hit.addEventListener("click", () => openShow(show.name));
       box.append(hit);
     });

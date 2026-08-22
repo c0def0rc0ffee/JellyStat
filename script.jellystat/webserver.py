@@ -191,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"batches": importer.batches()})
         elif route.path == "/api/search":
             term = (parse_qs(route.query).get("q") or [""])[0]
-            self._send_json(200, library.search(term))
+            self._send_json(200, recommend.search(term))
         elif route.path == "/api/movie":
             item_id = (parse_qs(route.query).get("id") or [""])[0]
             self._serve_detail("movie", item_id=item_id)
