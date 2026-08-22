@@ -69,12 +69,21 @@ nav.side button[aria-current="true"] {
 }
 nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
   margin: 0 4px 10px; }
+/* A second level, indented under its parent rather than given its own icon:
+   the icon column is what makes the top level scannable, and repeating it
+   for children would flatten the two back into one list. */
+nav.side button.sub { font-size: 13px; padding-left: 39px; padding-top: 6px;
+  padding-bottom: 6px; }
+nav.side button.sub::before { content: ""; }
 @media (max-width: 860px) {
   .wrap { display: block; }
-  nav.side { position: static; flex-direction: row; margin-bottom: 16px;
-    padding: 6px; }
+  nav.side { position: static; flex-direction: row; flex-wrap: wrap;
+    margin-bottom: 16px; padding: 6px; }
   nav.side .navgap { display: none; }
   nav.side button { padding: 8px 12px; }
+  /* Sideways there is no "under", so the indent would just look like a
+     stray gap. The label carries the relationship instead. */
+  nav.side button.sub { padding-left: 12px; }
 }
 
 /* Headline tiles (this month / all time) */
@@ -498,6 +507,53 @@ a.action {
 }
 a.action:hover { background: var(--panel-2); }
 
+/* A dense list rather than cards: the point of this page is comparing a
+   lot of titles on a few numbers, which a grid of posters is bad at. */
+.libtable { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }
+.librow { display: grid; align-items: center; gap: 12px;
+  grid-template-columns: 1fr 56px 62px 52px 62px; width: 100%;
+  text-align: left; border: 0; background: transparent; color: var(--ink);
+  padding: 9px 11px; border-radius: 8px; cursor: pointer; font-size: 13.5px;
+  font-family: inherit; }
+.librow:hover { background: var(--panel-2); }
+.librow .nm { min-width: 0; display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; }
+.librow .yr, .librow .cr, .librow .mine, .librow .pl {
+  color: var(--ink-dim); font-size: 12.5px; text-align: right;
+  font-variant-numeric: tabular-nums; }
+.librow .mine { color: #f4c542; }
+.libline { display: grid; grid-template-columns: 1fr auto;
+  align-items: center; gap: 6px; }
+.libline .whenbox { grid-column: 1 / -1; display: none; }
+.libline .whenbox.open { display: block; background: var(--bg);
+  border-radius: 8px; padding: 9px 12px; margin: 2px 0 8px;
+  font-size: 12.5px; color: var(--ink-dim); line-height: 1.6; }
+.libline .whenbox .one b { color: var(--ink); font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+.libline .whenbox .none { color: var(--ink-dim); }
+.whenbtn { flex: none; border: 1px solid var(--line); background: transparent;
+  color: var(--ink-dim); border-radius: 999px; padding: 4px 11px;
+  font-size: 12px; cursor: pointer; font-family: inherit; }
+.whenbtn:hover { color: var(--ink); border-color: var(--accent); }
+.whenbtn[disabled] { opacity: .5; cursor: default; }
+
+.dupetag { font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+  color: var(--warn); border: 1px solid var(--warn); border-radius: 999px;
+  padding: 1px 7px; }
+.newtag { font-size: 10.5px; color: var(--ink-dim);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+@media (max-width: 640px) {
+  .librow { grid-template-columns: 1fr 52px 56px; }
+  .librow .mine, .librow .pl { display: none; }
+}
+
+.dupenote { background: var(--panel-2); border-left: 3px solid var(--warn);
+  border-radius: 9px; padding: 13px 15px; margin: 14px 0; }
+.dupenote .nm { font-size: 14px; font-weight: 600; color: var(--warn); }
+.dupenote .sub { font-size: 12.5px; color: var(--ink-dim); margin-top: 4px;
+  line-height: 1.5; }
+.dupenote .filerow { margin-top: 10px; }
+
 /* Cards + panels */
 .cards {
   display: grid; gap: 12px; margin-bottom: 22px;
@@ -627,9 +683,11 @@ button.danger { color: var(--warn); }
     <button data-view="movies">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M7 5v14M17 5v14M2.5 12h19"/></svg>
       Movies</button>
+    <button data-view="movies-library" class="sub">Library</button>
     <button data-view="tv">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="7" width="19" height="12" rx="2"/><path d="M8 3.5 12 7l4-3.5"/></svg>
       TV</button>
+    <button data-view="tv-library" class="sub">Library</button>
     <button data-view="rate">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 14V3M4 3l9 3-3 3 3 3-9 3"/></svg>
       Rate</button>
@@ -769,6 +827,30 @@ button.danger { color: var(--warn); }
           <div class="scroll" id="tv-best"></div>
         </section>
       </div>
+    </div>
+
+    <div id="view-movies-library" style="display:none">
+      <section class="panel">
+        <h2>Film library</h2>
+        <p class="hint" id="movies-lib-hint"></p>
+        <div class="tabs" id="movies-lib-shows"></div>
+        <div class="sortbar" id="movies-lib-sort"></div>
+        <div class="genrefilter" id="movies-lib-genres"></div>
+        <div id="movies-lib"></div>
+        <div class="pager" id="movies-lib-pager"></div>
+      </section>
+    </div>
+
+    <div id="view-tv-library" style="display:none">
+      <section class="panel">
+        <h2>TV library</h2>
+        <p class="hint" id="tv-lib-hint"></p>
+        <div class="tabs" id="tv-lib-shows"></div>
+        <div class="sortbar" id="tv-lib-sort"></div>
+        <div class="genrefilter" id="tv-lib-genres"></div>
+        <div id="tv-lib"></div>
+        <div class="pager" id="tv-lib-pager"></div>
+      </section>
     </div>
 
     <div id="view-recommended" style="display:none">
@@ -2252,8 +2334,15 @@ function numberField(placeholder, value, hint, commit, min, max, step) {
 
 function renderGenreFilter(media, payload) {
   const prefix = media === "movies" ? "movie" : "tv";
-  const host = $(prefix + "-recs-genres");
-  const state = RECS[media];
+  genreChips($(prefix + "-recs-genres"), RECS[media], payload,
+             () => loadRecs(media));
+}
+
+/* The tri-state genre chips, shared by Discover and the library browser.
+   Unset -> must have -> must not have -> unset. Three states on one control
+   rather than two controls per genre: doubling the row to serve the rare
+   case would make the common one (tick a thing) worse. */
+function genreChips(host, state, payload, reload) {
   host.textContent = "";
   const available = payload.genres_available || [];
   if (!available.length) return;
@@ -2286,9 +2375,6 @@ function renderGenreFilter(media, payload) {
     const key = entry.genre.toLowerCase();
     const on = selected.has(key);
     const off = refused.has(key);
-    /* Three states, one control: unset -> must have -> must not have ->
-       unset. Two separate controls per genre would double the row and make
-       the common case (tick one thing) worse to serve the rare one. */
     const chip = el("button", { type: "button" },
                     (off ? "not " : "") + entry.genre
                     + (entry.gone ? "" : " (" + num(entry.count) + ")"));
@@ -2298,18 +2384,17 @@ function renderGenreFilter(media, payload) {
       : off ? "Excluded — click to clear"
             : "Click to require, click again to exclude";
     chip.addEventListener("click", () => {
-      const name = entry.genre;
       const drop = (list) => list.filter((g) => g.toLowerCase() !== key);
-      if (on) {                       // required -> refused
+      if (on) {
         state.genres = drop(state.genres);
-        state.exclude = state.exclude.concat([name]);
-      } else if (off) {               // refused -> neutral
+        state.exclude = state.exclude.concat([entry.genre]);
+      } else if (off) {
         state.exclude = drop(state.exclude);
-      } else {                        // neutral -> required
-        state.genres = state.genres.concat([name]);
+      } else {
+        state.genres = state.genres.concat([entry.genre]);
       }
       state.offset = 0;          /* a new filter starts at the top again */
-      loadRecs(media);
+      reload();
     });
     host.append(chip);
   });
@@ -2319,7 +2404,7 @@ function renderGenreFilter(media, payload) {
                     "+" + (available.length - GENRE_CHIPS_SHOWN) + " more");
     more.addEventListener("click", () => {
       state.showAll = true;
-      renderGenreFilter(media, payload);
+      genreChips(host, state, payload, reload);
     });
     host.append(more);
   }
@@ -2330,7 +2415,7 @@ function renderGenreFilter(media, payload) {
       state.genres = [];
       state.exclude = [];
       state.offset = 0;
-      loadRecs(media);
+      reload();
     });
     host.append(clear);
   }
@@ -3597,6 +3682,321 @@ function renderTraktOutcome(result, token) {
   }
 }
 
+/* ---------- library browser ---------- */
+
+/* Distinct from Discover: that ranks a shortlist by taste, this lists
+   everything you own and lets you cut it down. Same controls where they do
+   the same job - the genre chips and the year and rating filters behave
+   identically in both, so learning them once is enough. */
+const LIB = {
+  movies: { genres: [], exclude: [], sort: "name", desc: null, show: "all",
+            yearFrom: "", yearTo: "", minRating: "", offset: 0,
+            pageSize: 48 },
+  tv: { genres: [], exclude: [], sort: "name", desc: null, show: "all",
+        yearFrom: "", yearTo: "", minRating: "", offset: 0, pageSize: 48 },
+};
+
+const LIB_SORTS = [
+  ["name", "Title"],
+  ["year", "Year"],
+  ["rating", "Community rating"],
+  ["mine", "Your rating"],
+  ["plays", "Times played"],
+  ["watched", "Last watched"],
+  ["runtime", "Runtime"],
+];
+
+/* The special views. "Duplicates" is the reason this exists at all: a film
+   held twice is invisible everywhere else, and its plays and ratings are
+   split between the copies. */
+const LIB_SHOWS = [
+  ["all", "Everything"],
+  ["unwatched", "Not watched"],
+  ["watched", "Watched"],
+  ["unrated", "Not rated by you"],
+  ["rated", "Rated by you"],
+  ["favourites", "Favourites"],
+  ["duplicates", "Duplicates only"],
+];
+
+function libPrefix(media) { return media === "tv" ? "tv-lib" : "movies-lib"; }
+
+async function loadLibrary(media) {
+  const prefix = libPrefix(media);
+  const host = $(prefix);
+  const state = LIB[media];
+  host.textContent = "";
+  host.append(el("p", { class: "empty" }, "Reading your library…"));
+  const query = ["media=" + media, "offset=" + state.offset,
+                 "limit=" + state.pageSize, "sort=" + state.sort,
+                 "show=" + state.show]
+    .concat(state.genres.map((g) => "genre=" + encodeURIComponent(g)))
+    .concat(state.exclude.map((g) => "not=" + encodeURIComponent(g)));
+  if (state.desc !== null) query.push("desc=" + (state.desc ? "1" : "0"));
+  if (state.yearFrom) query.push("from=" + encodeURIComponent(state.yearFrom));
+  if (state.yearTo) query.push("to=" + encodeURIComponent(state.yearTo));
+  if (state.minRating) {
+    query.push("minrating=" + encodeURIComponent(state.minRating));
+  }
+  try {
+    const response = await fetch("/api/library?" + query.join("&"),
+                                 { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || response.status);
+    payload.media = media;
+    renderLibShows(media, payload);
+    renderLibSort(media, payload);
+    renderLibGenres(media, payload);
+    renderLibList(media, payload);
+    renderLibPager(media, payload);
+    $(prefix + "-hint").textContent = libHint(media, payload);
+  } catch (err) {
+    host.textContent = "";
+    host.append(el("p", { class: "empty" },
+      "Could not read the library: " + err.message));
+    $(prefix + "-pager").textContent = "";
+  }
+}
+
+function libHint(media, payload) {
+  const noun = media === "tv" ? "shows" : "films";
+  const counts = payload.counts || {};
+  const bits = [num(counts.all) + " " + noun,
+                num(counts.unwatched) + " not watched",
+                num(counts.unrated) + " not rated by you"];
+  if (counts.duplicates) {
+    bits.push(num(counts.duplicates) + " held more than once");
+  }
+  return bits.join(" · ")
+    + (payload.offline ? " — Jellyfin is unreachable, so only titles you "
+        + "have watched are listed." : "");
+}
+
+function renderLibShows(media, payload) {
+  const host = $(libPrefix(media) + "-shows");
+  const state = LIB[media];
+  host.textContent = "";
+  const counts = payload.counts || {};
+  LIB_SHOWS.forEach(([value, label]) => {
+    /* A view that would be empty is not offered - except the one currently
+       chosen, which must always be escapable. */
+    if (!counts[value] && state.show !== value) return;
+    host.append(button(label + " (" + num(counts[value] || 0) + ")",
+                       state.show === value, () => {
+      state.show = value;
+      state.offset = 0;
+      loadLibrary(media);
+    }));
+  });
+}
+
+function renderLibSort(media, payload) {
+  const host = $(libPrefix(media) + "-sort");
+  const state = LIB[media];
+  host.textContent = "";
+  const rerun = () => { state.offset = 0; loadLibrary(media); };
+
+  const order = el("select");
+  LIB_SORTS.forEach(([value, label]) => {
+    if (media === "tv" && (value === "runtime")) return;
+    const option = el("option", { value: value }, label);
+    if (state.sort === value) option.setAttribute("selected", "selected");
+    order.append(option);
+  });
+  order.addEventListener("change", () => {
+    state.sort = order.value;
+    state.desc = null;            /* each column has its own natural way up */
+    rerun();
+  });
+  const orderLabel = el("label");
+  orderLabel.append(document.createTextNode("Sort by"), order);
+  host.append(orderLabel);
+
+  const dir = el("button", { type: "button", class: "action" },
+                  payload.descending ? "High to low ↓" : "Low to high ↑");
+  dir.addEventListener("click", () => {
+    state.desc = !payload.descending;
+    rerun();
+  });
+  host.append(dir);
+
+  const bounds = payload.year_bounds || [1900, 2100];
+  const years = el("label");
+  years.append(document.createTextNode("Year"),
+    numberField("From", state.yearFrom, bounds[0],
+                (v) => { state.yearFrom = v; rerun(); }),
+    numberField("to", state.yearTo, bounds[1],
+                (v) => { state.yearTo = v; rerun(); }));
+  host.append(years);
+
+  const rated = el("label");
+  rated.append(document.createTextNode("Rated at least"),
+    numberField("Any", state.minRating, "",
+                (v) => { state.minRating = v; rerun(); }, 0, 10, 0.1));
+  host.append(rated);
+
+  if (state.genres.length || state.exclude.length || state.yearFrom
+      || state.yearTo || state.minRating || state.show !== "all"
+      || state.sort !== "name") {
+    const reset = el("button", { type: "button", class: "reset" },
+                      "reset all");
+    reset.addEventListener("click", () => {
+      Object.assign(state, { genres: [], exclude: [], sort: "name",
+                             desc: null, show: "all", yearFrom: "",
+                             yearTo: "", minRating: "", offset: 0 });
+      loadLibrary(media);
+    });
+    host.append(reset);
+  }
+}
+
+function renderLibGenres(media, payload) {
+  const host = $(libPrefix(media) + "-genres");
+  const state = LIB[media];
+  genreChips(host, state, payload, () => loadLibrary(media));
+}
+
+function renderLibList(media, payload) {
+  const host = $(libPrefix(media));
+  host.textContent = "";
+  if (!payload.items.length) {
+    host.append(el("p", { class: "empty" },
+      "Nothing here with those filters."));
+    return;
+  }
+  const list = el("div", { class: "libtable" });
+  payload.items.forEach((item) => {
+    const row = el("button", { class: "librow", type: "button" });
+    const name = el("div", { class: "nm" });
+    name.append(document.createTextNode(item.name));
+    if (item.copies > 1) {
+      name.append(el("span", { class: "dupetag" },
+                     "×" + item.copies + " copies"));
+    }
+    if (!item.seen) name.append(el("span", { class: "newtag" }, "unwatched"));
+    row.append(name);
+    row.append(el("div", { class: "yr" }, item.year ? String(item.year) : ""));
+    row.append(el("div", { class: "cr" },
+                  item.rating ? "★ " + item.rating.toFixed(1) : "—"));
+    row.append(el("div", { class: "mine" },
+                  item.user_rating !== null && item.user_rating !== undefined
+                    ? item.user_rating.toFixed(1) : "—"));
+    row.append(el("div", { class: "pl" },
+      media === "tv"
+        ? (item.episodes ? num(item.episodes) + " ep" : "—")
+        : (item.play_count ? num(item.play_count) : "—")));
+    row.addEventListener("click", () => {
+      if (media === "tv") openShow(item.name);
+      else openMovie(item.id);
+    });
+
+    /* "When did I watch this" is a four-line answer, so it opens in place
+       rather than costing a page load and a trip back. Outside the row's
+       own button so that clicking it does not also open the title. */
+    const line = el("div", { class: "libline" });
+    line.append(row);
+    if (item.seen) {
+      const when = el("button", { class: "whenbtn", type: "button" },
+                       "Dates");
+      const dates = el("div", { class: "whenbox" });
+      when.addEventListener("click", () => toggleSittings(media, item, when,
+                                                         dates));
+      line.append(when);
+      line.append(dates);
+    }
+    list.append(line);
+  });
+  host.append(list);
+}
+
+async function toggleSittings(media, item, button, box) {
+  if (box.classList.contains("open")) {
+    box.classList.remove("open");
+    box.textContent = "";
+    button.textContent = "Dates";
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "…";
+  const query = media === "tv"
+    ? "show=" + encodeURIComponent(item.name)
+    : "title=" + encodeURIComponent(item.name);
+  try {
+    const response = await fetch("/api/sittings?" + query,
+                                 { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || response.status);
+    box.textContent = "";
+    const rows = payload.sittings || [];
+    if (!rows.length) {
+      /* The play log starts when it was installed; the mirror's play
+         counter goes back further. Saying so beats an empty box. */
+      box.append(el("div", { class: "none" },
+        "Played " + plural(item.play_count || 0, "time")
+        + ", but before the play log started — no individual dates were "
+        + "recorded."));
+    } else {
+      rows.slice(0, 40).forEach((sitting) => {
+        const entry = el("div", { class: "one" });
+        entry.append(el("b", {}, fmtStamp(sitting.started_at)));
+        const detail = [];
+        if (sitting.season !== null && sitting.season !== undefined) {
+          detail.push("S" + String(sitting.season).padStart(2, "0") + "E"
+                      + String(sitting.episode || 0).padStart(2, "0")
+                      + " · " + sitting.title);
+        }
+        if (sitting.watched_seconds) {
+          detail.push(Math.round(sitting.watched_seconds / 60) + " min");
+        }
+        detail.push((sitting.source || "kodi")
+                    + (sitting.completed ? " ✓" : ""));
+        entry.append(document.createTextNode(" — " + detail.join(" · ")));
+        box.append(entry);
+      });
+      if (rows.length > 40) {
+        box.append(el("div", { class: "none" },
+          "…and " + num(rows.length - 40) + " more; open the title for all "
+          + "of them."));
+      }
+    }
+    box.classList.add("open");
+    button.textContent = "Hide";
+  } catch (err) {
+    box.textContent = "";
+    box.append(el("div", { class: "none" },
+      "Could not read the dates: " + err.message));
+    box.classList.add("open");
+    button.textContent = "Dates";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderLibPager(media, payload) {
+  const host = $(libPrefix(media) + "-pager");
+  const state = LIB[media];
+  host.textContent = "";
+  const total = payload.total || 0;
+  if (!total) return;
+  const from = payload.offset + 1;
+  const to = Math.min(payload.offset + payload.limit, total);
+  host.append(el("span", { class: "range" },
+    "Showing " + num(from) + "–" + num(to) + " of " + num(total)));
+  const back = el("button", { type: "button" }, "‹ Back");
+  back.disabled = payload.offset <= 0;
+  back.addEventListener("click", () => {
+    state.offset = Math.max(0, state.offset - state.pageSize);
+    loadLibrary(media);
+  });
+  const forward = el("button", { type: "button" }, "Forward ›");
+  forward.disabled = to >= total;
+  forward.addEventListener("click", () => {
+    state.offset = state.offset + state.pageSize;
+    loadLibrary(media);
+  });
+  host.append(back, forward);
+}
+
 /* ---------- backups ---------- */
 
 async function loadBackups() {
@@ -3641,7 +4041,7 @@ $("baknow").addEventListener("click", async (evt) => {
 /* ---------- views ---------- */
 
 const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
-               "recommended", "rate"];
+               "movies-library", "tv-library", "recommended", "rate"];
 
 function showView(name) {
   VIEWS.forEach((view) => {
@@ -3666,6 +4066,8 @@ document.querySelectorAll("nav.side button").forEach((btn) => {
     if (btn.dataset.view === "movies" || btn.dataset.view === "tv") {
       loadMediaPage(btn.dataset.view);
     }
+    if (btn.dataset.view === "movies-library") loadLibrary("movies");
+    if (btn.dataset.view === "tv-library") loadLibrary("tv");
     if (btn.dataset.view === "recommended") {
       loadRecs("movies");
       loadRecs("tv");
@@ -3784,6 +4186,35 @@ async function runSearch(term) {
 }
 
 /* ---------- item pages ---------- */
+
+/* Jellyfin will hold the same film twice without ever saying so, and the
+   consequences are quiet: plays, ratings and every count on every other
+   page get split between the copies, so a film watched twice reads as
+   watched once. Worth saying plainly on the page for the film itself. */
+function duplicateNote(movie) {
+  const copies = movie.duplicates || [];
+  if (!copies.length) return document.createDocumentFragment();
+  const box = el("div", { class: "dupenote" });
+  box.append(el("div", { class: "nm" },
+    "This film is in your library " + (copies.length + 1) + " times"));
+  const plays = copies.reduce((sum, c) => sum + (c.play_count || 0),
+                              movie.play_count || 0);
+  box.append(el("div", { class: "sub" },
+    "Jellyfin holds " + (copies.length + 1) + " separate entries for it, so "
+    + "its plays and ratings are split between them — "
+    + plural(plays, "play") + " in total across all copies. Removing the "
+    + "spare in Jellyfin merges them."));
+  const row = el("div", { class: "filerow" });
+  copies.forEach((copy) => {
+    const go = el("button", { class: "action", type: "button" },
+      "Other copy" + (copy.play_count
+        ? " (" + plural(copy.play_count, "play") + ")" : " (never played)"));
+    go.addEventListener("click", () => openMovie(copy.id));
+    row.append(go);
+  });
+  box.append(row);
+  return box;
+}
 
 function itemShell() {
   CURRENT_ITEM = null;
@@ -4117,6 +4548,7 @@ async function openMovie(id) {
      "first seen by the mirror"],
     [movie.present ? null : "no longer on Jellyfin", ""],
   ]));
+  host.append(duplicateNote(movie));
   host.append(playBar({ id: movie.id }));
   if (!movie.watched) host.append(notWatchedNote("film"));
   host.append(castPanel(detail));

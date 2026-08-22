@@ -543,6 +543,99 @@ def _sittings(connection, show, title=None):
         "WHERE %s ORDER BY started_at DESC LIMIT 200" % where, params)]
 
 
+def dupe_key(name, year):
+    """What makes two library entries the same film.
+
+    Title and year, with punctuation and case thrown away. Not the id -
+    duplicates have different ids, that being the whole problem - and not
+    the title alone, because remakes are not duplicates and "Alien" and
+    "Aliens" are certainly not.
+    """
+    flat = re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    return "%s|%s" % (flat, year or "")
+
+
+def duplicates_of(connection, item_id, name, year, media="movie"):
+    """Other entries in the library that are the same title as this one.
+
+    Jellyfin is happy to hold a film twice - two rips, two folders, a
+    re-import - and nothing in the interface says so. It matters here
+    because plays, ratings and the counts on every other page get split
+    between the copies, so a film watched twice can look watched once.
+    """
+    key = dupe_key(name, year)
+    out = []
+    for row in connection.execute(
+            "SELECT id, name, year, play_count, last_played, user_rating "
+            "FROM items WHERE media = ? AND id != ?", (media, item_id)):
+        if dupe_key(row[1], row[2]) != key:
+            continue
+        out.append({"id": row[0], "name": row[1], "year": row[2],
+                    "play_count": row[3], "last_played": row[4],
+                    "user_rating": row[5]})
+    return out
+
+
+def sittings_for(title=None, show=None):
+    """Every logged viewing of one film or one show, newest first.
+
+    Split out from the item pages so a list can offer "when did I watch
+    this" without loading a whole detail page, artwork and cast included,
+    for a question that is four rows of dates.
+    """
+    connection = connect()
+    try:
+        return _sittings(connection, show, title=title)
+    finally:
+        connection.close()
+
+
+def browse_rows(media):
+    """Every title of a medium the mirror holds, flat, for the library page.
+
+    Films come straight from items. Shows are assembled from their episodes
+    - the series row carries the name and artwork, the episodes carry what
+    was actually watched - so "how much of this have I seen" is answered by
+    counting them rather than by a play_count that series rows do not keep.
+    """
+    connection = connect()
+    if media == "movies":
+        rows = [{
+            "id": r[0], "name": r[1], "year": r[2],
+            "genres": json.loads(r[3] or "[]"), "rating": r[4],
+            "user_rating": r[5], "play_count": r[6] or 0,
+            "last_played": r[7], "favourite": bool(r[8]),
+            "runtime_minutes": r[9], "seen": bool(r[6]), "episodes": None,
+        } for r in connection.execute(
+            "SELECT id, name, year, genres, rating, user_rating, play_count, "
+            "last_played, favourite, runtime_minutes FROM items "
+            "WHERE media = 'movie'")]
+        connection.close()
+        return rows
+
+    watched = {}
+    for name, count, last in connection.execute(
+            "SELECT series_name, COUNT(*), MAX(last_played) FROM items "
+            "WHERE media = 'episode' AND series_name IS NOT NULL "
+            "AND play_count > 0 GROUP BY series_name"):
+        watched[(name or "").strip().lower()] = (count, last)
+    rows = []
+    for r in connection.execute(
+            "SELECT id, name, year, genres, rating, user_rating, favourite "
+            "FROM items WHERE media = 'series'"):
+        episodes, last = watched.get((r[1] or "").strip().lower(), (0, None))
+        rows.append({
+            "id": r[0], "name": r[1], "year": r[2],
+            "genres": json.loads(r[3] or "[]"), "rating": r[4],
+            "user_rating": r[5], "play_count": episodes,
+            "last_played": last, "favourite": bool(r[6]),
+            "runtime_minutes": None, "seen": episodes > 0,
+            "episodes": episodes,
+        })
+    connection.close()
+    return rows
+
+
 def movie_detail(item_id):
     """Everything the mirror and the play log know about one film."""
     connection = connect()
@@ -561,6 +654,7 @@ def movie_detail(item_id):
         "present": bool(row[10]),
         "sittings": _sittings(connection, None, title=row[1]),
     }
+    detail["duplicates"] = duplicates_of(connection, row[0], row[1], row[2])
     connection.close()
     return detail
 

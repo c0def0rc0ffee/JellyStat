@@ -198,6 +198,14 @@ class Handler(BaseHTTPRequestHandler):
         elif route.path == "/api/show":
             name = (parse_qs(route.query).get("name") or [""])[0]
             self._serve_detail("tv", name=name)
+        elif route.path == "/api/sittings":
+            query = parse_qs(route.query)
+            title = (query.get("title") or [None])[0]
+            show = (query.get("show") or [None])[0]
+            self._send_json(200, {"sittings": library.sittings_for(
+                title=title, show=show)})
+        elif route.path == "/api/library":
+            self._serve_library(parse_qs(route.query))
         elif route.path == "/api/stats":
             media = (parse_qs(route.query).get("media") or ["movies"])[0]
             self._send_json(200, library.movie_stats()
@@ -571,6 +579,36 @@ class Handler(BaseHTTPRequestHandler):
         except playback.PlaybackError:
             pass
         self._send_json(200, result)
+
+    def _serve_library(self, query):
+        """The library browser: everything owned, filtered and ordered."""
+        media = (query.get("media") or ["movies"])[0]
+        if media not in ("movies", "tv"):
+            media = "movies"
+        try:
+            limit = min(max(int((query.get("limit") or ["48"])[0]), 1), 200)
+        except ValueError:
+            limit = 48
+        try:
+            offset = int((query.get("offset") or ["0"])[0])
+        except ValueError:
+            offset = 0
+        descending = (query.get("desc") or [None])[0]
+        try:
+            payload = recommend.browse(
+                media, limit, offset,
+                genres=[g for g in (query.get("genre") or []) if g.strip()],
+                exclude=[g for g in (query.get("not") or []) if g.strip()],
+                sort=(query.get("sort") or ["name"])[0],
+                descending=None if descending is None else descending == "1",
+                year_from=_number(query, "from"),
+                year_to=_number(query, "to"),
+                rating_min=_number(query, "minrating", float),
+                show=(query.get("show") or ["all"])[0])
+        except core.JellyStatError as err:
+            self._send_json(503, {"error": str(err)})
+            return
+        self._send_json(200, payload)
 
     def _serve_suggestions(self, path, query):
         """Recommendations and similar titles share their failure modes.

@@ -513,6 +513,166 @@ def search(term, limit=25):
 
 
 # ---------------------------------------------------------------------------
+# Browsing the whole library
+# ---------------------------------------------------------------------------
+
+BROWSE_SHOWS = ("all", "watched", "unwatched", "rated", "unrated",
+                "favourites", "duplicates")
+BROWSE_SORTS = ("name", "year", "rating", "mine", "plays", "watched",
+                "runtime")
+
+
+def browse(media, limit=48, offset=0, genres=None, exclude=None,
+           sort="name", descending=None, year_from=None, year_to=None,
+           rating_min=None, show="all"):
+    """The library itself, filtered and ordered - watched or not.
+
+    Distinct from recommendations, which answer "what should I watch": this
+    answers "what have I got", so it starts from everything and narrows,
+    rather than starting from a score and ranking. The catalogue is merged
+    in for the same reason it is in search - a mirror of what was watched
+    cannot answer a question about what is owned.
+    """
+    if sort not in BROWSE_SORTS:
+        sort = "name"
+    if show not in BROWSE_SHOWS:
+        show = "all"
+    rows = library.browse_rows(media)
+    known = {row["id"] for row in rows}
+    offline = False
+    try:
+        movies, series = catalog()
+        for item in (movies if media == "movies" else series):
+            if item.get("Id") in known:
+                continue
+            rows.append({
+                "id": item.get("Id"), "name": item.get("Name") or "?",
+                "year": item.get("ProductionYear"),
+                "genres": core.effective_genres(item),
+                "rating": item.get("CommunityRating"), "user_rating": None,
+                "play_count": 0, "last_played": None, "favourite": False,
+                "runtime_minutes": None, "seen": False, "episodes": None,
+            })
+    except core.JellyStatError:
+        offline = True
+
+    # Counted over the whole library before any filter, so "duplicates only"
+    # is a filter on a fact rather than on whatever else is currently
+    # selected - and so the count means the same thing every time.
+    seen_keys = {}
+    for row in rows:
+        key = library.dupe_key(row["name"], row["year"])
+        seen_keys[key] = seen_keys.get(key, 0) + 1
+    for row in rows:
+        row["copies"] = seen_keys[library.dupe_key(row["name"], row["year"])]
+        row["genres"] = [core.canonical_genre(g) for g in row["genres"]] \
+            or ["Unknown"]
+
+    kept = [row for row in rows if _shown(row, show)]
+    kept = _narrow(kept, genres, exclude, year_from, year_to, rating_min)
+    _sort_browse(kept, sort, descending)
+
+    tally = {}
+    for row in kept:
+        for genre in row["genres"]:
+            tally[genre] = tally.get(genre, 0) + 1
+    years = [row["year"] for row in kept if row["year"]]
+    offset = max(0, int(offset or 0))
+    return {
+        "items": kept[offset:offset + limit],
+        "total": len(kept),
+        "offset": offset,
+        "limit": limit,
+        "sort": sort,
+        "descending": bool(_descending(sort, descending)),
+        "show": show,
+        "counts": {
+            "all": len(rows),
+            "watched": sum(1 for r in rows if r["seen"]),
+            "unwatched": sum(1 for r in rows if not r["seen"]),
+            "rated": sum(1 for r in rows if r["user_rating"] is not None),
+            "unrated": sum(1 for r in rows if r["user_rating"] is None),
+            "favourites": sum(1 for r in rows if r["favourite"]),
+            "duplicates": sum(1 for r in rows if r["copies"] > 1),
+        },
+        "genres_available": [{"genre": g, "count": c} for g, c in
+                             sorted(tally.items(),
+                                    key=lambda kv: (-kv[1], kv[0]))],
+        "genres_selected": sorted(_clean(genres)),
+        "genres_excluded": sorted(_clean(exclude)),
+        "year_bounds": [min(years), max(years)] if years else None,
+        "offline": offline,
+    }
+
+
+def _shown(row, show):
+    if show == "watched":
+        return row["seen"]
+    if show == "unwatched":
+        return not row["seen"]
+    if show == "rated":
+        return row["user_rating"] is not None
+    if show == "unrated":
+        return row["user_rating"] is None
+    if show == "favourites":
+        return row["favourite"]
+    if show == "duplicates":
+        return row["copies"] > 1
+    return True
+
+
+def _narrow(rows, genres, exclude, year_from, year_to, rating_min):
+    wanted = _clean(genres)
+    unwanted = _clean(exclude)
+    out = []
+    for row in rows:
+        held = {g.lower() for g in row["genres"]}
+        if wanted and not wanted <= held:
+            continue
+        if unwanted & held:
+            continue
+        year = row["year"]
+        if year_from and (not year or year < year_from):
+            continue
+        if year_to and (not year or year > year_to):
+            continue
+        if rating_min and (not row["rating"] or row["rating"] < rating_min):
+            continue
+        out.append(row)
+    return out
+
+
+def _descending(sort, descending):
+    """Which way round a column reads naturally when nobody has said.
+
+    A name sorts A-Z; a rating, a year or a play count sorts biggest first,
+    because "top rated" is what someone means by sorting on a rating.
+    """
+    if descending is not None:
+        return descending
+    return sort != "name"
+
+
+def _sort_browse(rows, sort, descending):
+    down = _descending(sort, descending)
+    keys = {
+        "name": lambda r: ((r["name"] or "").lower(),),
+        "year": lambda r: (r["year"] or 0,),
+        "rating": lambda r: (r["rating"] or 0,),
+        "mine": lambda r: (r["user_rating"] if r["user_rating"] is not None
+                           else -1,),
+        "plays": lambda r: (r["play_count"] or 0,),
+        "watched": lambda r: (r["last_played"] or "",),
+        "runtime": lambda r: (r["runtime_minutes"] or 0,),
+    }
+    # Name always breaks the tie, so paging is stable: equal values in a
+    # different order per request would repeat one title across pages and
+    # silently drop another.
+    rows.sort(key=lambda r: (r["name"] or "").lower())
+    rows.sort(key=keys[sort], reverse=down)
+
+
+# ---------------------------------------------------------------------------
 # Similar titles
 # ---------------------------------------------------------------------------
 
