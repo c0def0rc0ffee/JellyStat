@@ -10,7 +10,9 @@ fetched at most once an hour and kept in memory.
 Scoring is deliberately explainable:
 
 - A recommendation score is the sum of the viewer's genre weights over the
-  candidate's genres, times a quality factor from the community rating. A
+  candidate's genres (cosine-normalised, so a title is not rewarded merely
+  for carrying more tags), times a quality factor from the community
+  rating. A
   sci-fi-heavy history therefore surfaces well-rated sci-fi first, not
   whatever a black-box model likes this week.
 - Similarity is genre overlap (Jaccard) plus a small closeness-in-year
@@ -26,6 +28,7 @@ gets the connection error to show.
 """
 
 import json
+import math
 import threading
 import time
 
@@ -185,8 +188,23 @@ def recommendations(media, include_seen, limit=RECOMMEND_LIMIT, offset=0,
         # rebinding it here silently turned the filter into "whatever the
         # last candidate happened to be".
         item_genres = core.effective_genres(item)
-        affinity = sum(taste.get(genre.lower(), 0.0)
-                       for genre in item_genres)
+        # Cosine similarity between the title's genres and the taste
+        # profile: the sum of affinities over the square root of how many
+        # genres the title carries. (The profile's own length is the same
+        # for every candidate, so it drops out of the ranking.)
+        #
+        # The two naive options are both wrong, and both were tried here.
+        # A plain SUM rewards a title for carrying many tags - an eight
+        # genre film collects eight scores and buries a focused one, which
+        # is how the list filled with Robot Chicken when the sci-fi
+        # dominance rule was dropped in v0.15.0. A plain MEAN over-corrects
+        # the other way, handing the top to anything tagged with exactly
+        # one popular genre. The square root sits between them: matching
+        # two genres you love beats matching one, while a scattergun of
+        # eight gains little.
+        affinity = (sum(taste.get(genre.lower(), 0.0)
+                        for genre in item_genres)
+                    / math.sqrt(len(item_genres)))
         if affinity <= 0:
             continue
         quality = (item.get("CommunityRating") or 5.5) / 10.0

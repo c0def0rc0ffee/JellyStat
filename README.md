@@ -98,7 +98,9 @@ The page has a left menu: **Overview** (the stats below), **Recommended**,
 
 - **Recommended** suggests films and shows in separate sections, scored
   entirely from your own watching: each candidate on your server is weighted
-  by how much of your viewing falls in its genres, times its rating. Nothing
+  by how much of your viewing falls in its genres, times its rating. The
+  genre match is cosine-normalised, so a title is not promoted merely for
+  carrying a long list of tags. Nothing
   leaves the box and no external service is consulted. Clicking any
   suggestion opens its page, watched or not. Each section has a **genre
   filter** (tick any number of genres; a title must carry **every** genre ticked, and
