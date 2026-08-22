@@ -81,6 +81,20 @@ RATING_COLUMNS = [
     # Minutes, so watch-time totals cover the whole library rather than only
     # the period the play log happens to reach back to.
     "ALTER TABLE items ADD COLUMN runtime_minutes INTEGER",
+    # The ids every other tracker also knows a title by. Imported history is
+    # matched on these first and only falls back to the title, which is the
+    # difference between 82% and ~99% of episodes finding their row.
+    "ALTER TABLE items ADD COLUMN imdb_id TEXT",
+    "ALTER TABLE items ADD COLUMN tmdb_id TEXT",
+    "ALTER TABLE items ADD COLUMN tvdb_id TEXT",
+]
+
+# Looked up constantly by the importer, so they are worth indexing.
+RATING_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS items_imdb ON items (imdb_id)",
+    "CREATE INDEX IF NOT EXISTS items_tmdb ON items (tmdb_id)",
+    "CREATE INDEX IF NOT EXISTS items_tvdb ON items (tvdb_id)",
+    "CREATE INDEX IF NOT EXISTS items_series ON items (series_name)",
 ]
 
 
@@ -101,6 +115,11 @@ def connect():
                 connection.execute(statement)
             except sqlite3.OperationalError:
                 pass  # column already present
+        for statement in RATING_INDEXES:
+            try:
+                connection.execute(statement)
+            except sqlite3.OperationalError:
+                pass
         _schema_done = True
     return connection
 
@@ -134,7 +153,15 @@ def _row_from(item, media, series_genres):
         "jf_rating": _numeric(user_data.get("Rating")),
         "runtime_minutes": (int(item["RunTimeTicks"] // 600000000)
                             if item.get("RunTimeTicks") else None),
+        "imdb_id": _provider(item, "Imdb"),
+        "tmdb_id": _provider(item, "Tmdb"),
+        "tvdb_id": _provider(item, "Tvdb"),
     }
+
+
+def _provider(item, name):
+    value = (item.get("ProviderIds") or {}).get(name)
+    return str(value).strip() if value else None
 
 
 def _numeric(value):
@@ -145,33 +172,27 @@ def _numeric(value):
 
 
 def _adopt_rating(connection, row, existing):
-    """Take Jellyfin's per-user rating when it is the newer truth.
+    """Fill in a rating Jellyfin has and JellyStat does not.
 
-    `existing` is (play_count, last_played, user_rating, rating_sync).
+    JellyStat is the record of what you think of a title, and Jellyfin is
+    expected to match it, not the other way round. So this only ever fills
+    a gap: a score given in JellyRate, on a phone or in the web app arrives
+    here, but where JellyStat already holds one, the server's copy is
+    recorded for comparison and nothing is overwritten.
 
-    - No local score: adopt whatever the server has. This is how a rating
-      given in JellyRate, on a phone, or in the web app arrives here.
-    - Local score that differs from the server's: the server wins, because
-      it is the copy every device shares.
-    - The one exception is a local score whose write to Jellyfin *failed*.
-      That is a pending write rather than stale data, and adopting over it
-      would silently discard what the user just typed.
-
-    Note that "saved without pushing" is not an error: JellyRate writes the
-    rating to Jellyfin itself and then hands it to us, so those rows are
-    already in agreement with the server and must stay adoptable.
+    Anything else would fight the user. Imported ratings deliberately
+    differ from Jellyfin until they are pushed, and an "adopt the newer
+    truth" rule undid sixty of them within two minutes of the first Trakt
+    import. Disagreements are surfaced by ratings.contradictions() and
+    settled deliberately, not silently on the next sync.
     """
     server = row["jf_rating"]
-    local, sync_state = existing[2], existing[3]
-    # Always record what the server holds, even when the local score wins:
-    # the page reports both sides, so both have to be true.
+    local = existing[2]
+    # Always record what the server holds, even when nothing is adopted:
+    # the reconcile screen reports both sides, so both have to be true.
     connection.execute("UPDATE items SET jf_rating = ? WHERE id = ?",
                        (server, row["id"]))
-    if server is None:
-        return False
-    if local is not None and abs(float(local) - server) < 0.001:
-        return False
-    if (sync_state or "").startswith("error"):
+    if server is None or local is not None:
         return False
     connection.execute(
         "UPDATE items SET user_rating = ?, rating_sync = 'from jellyfin' "
@@ -217,7 +238,40 @@ def _infer_play(connection, row, utc_offset, now):
     return True
 
 
-def sync(movies, episodes, series_genres, utc_offset):
+def _series_row(item):
+    """A show as a mirror row.
+
+    Shows are stored so that things which belong to a show rather than to
+    one of its episodes have somewhere to live: a rating of the show, its
+    provider ids, its own artwork. They carry media='series' and are
+    excluded from every watched-item count, because a show is not something
+    you watched - its episodes are.
+    """
+    user_data = item.get("UserData") or {}
+    return {
+        "id": item["Id"],
+        "media": "series",
+        "name": item.get("Name") or "?",
+        "year": item.get("ProductionYear"),
+        "series_id": item["Id"],
+        "series_name": item.get("Name") or "?",
+        "season": None,
+        "episode": None,
+        "genres": json.dumps(item.get("Genres") or []),
+        "rating": item.get("CommunityRating"),
+        "critic": item.get("CriticRating"),
+        "favourite": 1 if user_data.get("IsFavorite") else 0,
+        "play_count": 0,
+        "last_played": None,
+        "runtime_minutes": None,
+        "imdb_id": _provider(item, "Imdb"),
+        "tmdb_id": _provider(item, "Tmdb"),
+        "tvdb_id": _provider(item, "Tvdb"),
+        "jf_rating": _numeric(user_data.get("Rating")),
+    }
+
+
+def sync(movies, episodes, series_genres, utc_offset, series=None):
     """Upsert the fetched library into the mirror; returns what happened.
 
     Change-detected plays are only inferred for items the mirror already
@@ -233,9 +287,13 @@ def sync(movies, episodes, series_genres, utc_offset):
         playlog.connect().close()
         with connection:
             seen_ids = []
-            for media, items in (("movie", movies), ("episode", episodes)):
+            groups = [("movie", movies), ("episode", episodes)]
+            if series:
+                groups.append(("series", series))
+            for media, items in groups:
                 for item in items:
-                    row = _row_from(item, media, series_genres)
+                    row = (_series_row(item) if media == "series"
+                           else _row_from(item, media, series_genres))
                     seen_ids.append(row["id"])
                     old = connection.execute(
                         "SELECT play_count, last_played, user_rating, "
@@ -246,12 +304,14 @@ def sync(movies, episodes, series_genres, utc_offset):
                             "INSERT INTO items (id, media, name, year, "
                             "series_id, series_name, season, episode, "
                             "genres, rating, critic, favourite, play_count, "
-                            "last_played, runtime_minutes, first_seen, "
-                            "last_seen, present) "
+                            "last_played, runtime_minutes, imdb_id, "
+                            "tmdb_id, tvdb_id, first_seen, last_seen, "
+                            "present) "
                             "VALUES (:id, :media, :name, :year, :series_id, "
                             ":series_name, :season, :episode, :genres, "
                             ":rating, :critic, :favourite, :play_count, "
-                            ":last_played, :runtime_minutes, '%s', '%s', 1)"
+                            ":last_played, :runtime_minutes, :imdb_id, "
+                            ":tmdb_id, :tvdb_id, '%s', '%s', 1)"
                             % (stamp, stamp),
                             row)
                         if row["jf_rating"]:
@@ -264,7 +324,7 @@ def sync(movies, episodes, series_genres, utc_offset):
                         added += 1
                         continue
                     changed = (row["last_played"] or "") != (old[1] or "")
-                    if changed and row["last_played"] \
+                    if media != "series" and changed and row["last_played"] \
                             and row["last_played"] > (old[1] or ""):
                         if _infer_play(connection, row, utc_offset, now):
                             inferred += 1
@@ -277,6 +337,8 @@ def sync(movies, episodes, series_genres, utc_offset):
                         "genres = :genres, rating = :rating, "
                         "critic = :critic, "
                         "runtime_minutes = :runtime_minutes, "
+                        "imdb_id = :imdb_id, tmdb_id = :tmdb_id, "
+                        "tvdb_id = :tvdb_id, "
                         "favourite = :favourite, play_count = :play_count, "
                         "last_played = :last_played, last_seen = '%s', "
                         "present = 1 WHERE id = :id" % stamp, row)
@@ -319,7 +381,8 @@ def as_jellyfin_items():
     rows = connection.execute(
         "SELECT id, media, name, year, series_id, series_name, season, "
         "episode, genres, rating, critic, favourite, play_count, "
-        "last_played FROM items ORDER BY last_played DESC").fetchall()
+        "last_played FROM items WHERE media IN ('movie', 'episode') "
+        "ORDER BY last_played DESC").fetchall()
     connection.close()
     movies, episodes, series_genres = [], [], {}
     for (item_id, media, name, year, series_id, series_name, season,
@@ -364,7 +427,8 @@ def status():
         row = connection.execute(
             "SELECT COUNT(*), SUM(CASE WHEN media = 'movie' THEN 1 ELSE 0 "
             "END), SUM(CASE WHEN present = 0 THEN 1 ELSE 0 END), "
-            "MAX(last_seen) FROM items").fetchone()
+            "MAX(last_seen) FROM items "
+            "WHERE media IN ('movie', 'episode')").fetchone()
         connection.close()
         return {"items": row[0] or 0, "movies": row[1] or 0,
                 "departed": row[2] or 0, "synced_at": row[3]}

@@ -25,6 +25,7 @@ import xbmc
 import xbmcaddon
 import xbmcvfs
 
+import backup
 import history
 import importer
 import library
@@ -32,7 +33,10 @@ import media as artwork
 import main as core
 import playback
 import ratings
+import reconcile
 import screentime
+import trakt_api
+import trakt_import
 import recommend
 import webdata
 
@@ -212,6 +216,21 @@ class Handler(BaseHTTPRequestHandler):
                     (q.get("series") or [""])[0],
                     (q.get("season") or [None])[0]),
                 parse_qs(route.query))
+        elif route.path == "/api/trakt/status":
+            try:
+                self._send_json(200, trakt_api.status())
+            except Exception as err:
+                self._send_json(500, {"error": str(err)})
+        elif route.path == "/api/reconcile":
+            try:
+                self._send_json(200, reconcile.survey())
+            except Exception as err:
+                self._send_json(500, {"error": str(err)})
+        elif route.path == "/api/backups":
+            self._send_json(200, {"backups": backup.listing(),
+                                  "keep": backup.KEEP})
+        elif route.path == "/api/backup/download":
+            self._serve_backup(parse_qs(route.query))
         elif route.path == "/api/tiles":
             self._send_json(200, screentime.tiles())
         elif route.path == "/api/screentime":
@@ -254,6 +273,41 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/play":
             self._serve_play()
             return
+        if path == "/api/trakt/stage":
+            self._serve_trakt_stage()
+            return
+        if path == "/api/trakt/commit":
+            self._serve_trakt_commit()
+            return
+        if path == "/api/trakt/connect":
+            try:
+                self._send_json(200, trakt_api.begin())
+            except trakt_api.TraktApiError as err:
+                self._send_json(400, {"error": str(err)})
+            return
+        if path == "/api/trakt/disconnect":
+            trakt_api.forget()
+            self._send_json(200, trakt_api.status())
+            return
+        if path == "/api/trakt/fetch":
+            self._serve_trakt_fetch()
+            return
+        if path == "/api/reconcile/start":
+            body = self._json_body()
+            try:
+                self._send_json(200, reconcile.start(
+                    body.get("action") or "push",
+                    body.get("scope") or "all"))
+            except ValueError as err:
+                self._send_json(400, {"error": str(err)})
+            except Exception as err:
+                log("Reconcile failed to start: %s" % err, xbmc.LOGERROR)
+                self._send_json(500, {"error": str(err)})
+            return
+        if path == "/api/backup/create":
+            self._send_json(200, {"backup": backup.create("manual",
+                                                          "requested")})
+            return
         if path == "/login":
             self._login()
             return
@@ -275,13 +329,33 @@ class Handler(BaseHTTPRequestHandler):
     def _read_body(self, limit=importer.MAX_BYTES):
         length = int(self.headers.get("Content-Length") or 0)
         if length > limit:
+            # Drain what was announced before answering. Refusing without
+            # reading leaves the client writing into a closed socket, and
+            # it sees a broken pipe rather than the explanation.
+            self._drain(length)
             raise importer.ImportError_(
                 "The upload is over %d MB." % (limit // 2**20))
         return self.rfile.read(length)
 
-    def _json_body(self):
+    def _drain(self, length):
+        remaining = length
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+
+    def _json_body(self, limit=2**20):
+        """Parse a JSON request body.
+
+        The default cap suits the small command bodies most endpoints take.
+        An import envelope is a file upload wearing a JSON hat and passes
+        its own, much larger, limit.
+        """
         try:
-            return json.loads(self._read_body(2**20).decode("utf-8"))
+            return json.loads(self._read_body(limit).decode("utf-8"))
+        except importer.ImportError_:
+            raise
         except (ValueError, UnicodeDecodeError):
             return {}
 
@@ -587,6 +661,80 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(blob)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def _serve_backup(self, query):
+        """Download one automatic snapshot."""
+        name = (query.get("name") or [""])[0]
+        path = backup.path_of(name)
+        if not path:
+            self._send(404, "No such backup.", "text/plain; charset=utf-8")
+            return
+        try:
+            with open(path, "rb") as handle:
+                blob = handle.read()
+        except OSError as err:
+            self._send(500, "Could not read it: %s" % err,
+                       "text/plain; charset=utf-8")
+            return
+        self._send(200, blob, "application/octet-stream",
+                   [("Content-Disposition",
+                     'attachment; filename="%s"' % name)])
+
+    def _serve_trakt_fetch(self):
+        """Pull everything from Trakt and stage it, exactly as a file would.
+
+        The API returns the same JSON the export files contain, so the
+        fetched data goes through the identical parse, match and staging
+        path; only its arrival is different.
+        """
+        try:
+            envelope = trakt_api.fetch_all()
+            self._send_json(200, trakt_import.stage(envelope))
+        except trakt_api.TraktApiError as err:
+            self._send_json(400, {"error": str(err)})
+        except trakt_import.TraktImportError as err:
+            self._send_json(400, {"error": str(err)})
+        except core.JellyStatError as err:
+            self._send_json(503, {"error": str(err)})
+        except Exception as err:
+            log("Trakt fetch failed: %s" % err, xbmc.LOGERROR)
+            self._send_json(500, {"error": "Could not fetch from Trakt: %s"
+                                           % err})
+
+    def _serve_trakt_stage(self):
+        """Parse an uploaded Trakt export and report what it holds."""
+        try:
+            # A whole Trakt export runs to several megabytes of JSON.
+            body = self._json_body(importer.MAX_BYTES)
+        except importer.ImportError_ as err:
+            self._send_json(413, {"error": str(err)})
+            return
+        envelope = body.get("files")
+        if not isinstance(envelope, dict) or not envelope:
+            self._send_json(400, {"error": "No Trakt files were sent."})
+            return
+        try:
+            self._send_json(200, trakt_import.stage(envelope))
+        except trakt_import.TraktImportError as err:
+            self._send_json(400, {"error": str(err)})
+        except core.JellyStatError as err:
+            self._send_json(503, {"error": str(err)})
+        except Exception as err:
+            log("Trakt staging failed: %s" % err, xbmc.LOGERROR)
+            self._send_json(500, {"error": "Could not read that export: %s"
+                                           % err})
+
+    def _serve_trakt_commit(self):
+        body = self._json_body()
+        try:
+            self._send_json(200, trakt_import.commit(
+                body.get("token"), body.get("categories"),
+                body.get("skip_duplicates", True)))
+        except trakt_import.TraktImportError as err:
+            self._send_json(400, {"error": str(err)})
+        except Exception as err:
+            log("Trakt import failed: %s" % err, xbmc.LOGERROR)
+            self._send_json(500, {"error": "The import failed: %s" % err})
 
     def _serve_export(self):
         """Download the whole database - mirror, snapshots, play log.

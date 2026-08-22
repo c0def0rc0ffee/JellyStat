@@ -284,7 +284,8 @@ def build(recent_days=30):
         creds = core.get_credentials()
         movies = core.get_watched(creds, "Movie")
         episodes = core.get_watched(creds, "Episode")
-        series_genres = core.get_series_genres(creds)
+        series = core.get_series(creds)
+        series_genres = core.get_series_genres(creds, series)
     except core.JellyStatError:
         movies, episodes, series_genres = library.as_jellyfin_items()
         if not movies and not episodes:
@@ -292,7 +293,7 @@ def build(recent_days=30):
         source = "mirror"
         creds = {"base": "local mirror (Jellyfin unreachable)"}
     else:
-        library.sync(movies, episodes, series_genres, offset)
+        library.sync(movies, episodes, series_genres, offset, series)
     recent_movies = core.filter_recent(movies, recent_days)
     recent_episodes = core.filter_recent(episodes, recent_days)
 

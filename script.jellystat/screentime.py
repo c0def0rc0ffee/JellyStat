@@ -9,11 +9,17 @@ matters because getting it wrong would invent numbers:
   over the whole library, including everything watched before this addon
   existed, but it is an estimate: it assumes a play means the whole thing.
 
-- **Screen time** is measured, not estimated. It comes from the play log's
-  real sittings, so it only covers the period the log reaches back to and it
-  counts the minutes actually watched. Every figure carries the window it
-  was measured over, and a comparison against the window before it, because
-  "6h 3m a day" only means something next to what it used to be.
+- **Screen time** comes from the play log's real sittings, so it only covers
+  the period the log reaches back to. Every figure carries the window it was
+  measured over and a comparison against the window before it, because "6h
+  3m a day" only means something next to what it used to be.
+
+  Not all of it is measured, though, and the panel says which is which. A
+  sitting recorded by this box has a real duration; one imported from Trakt
+  or a similar service has only the item's runtime, because those services
+  record *that* something was played and never for how long. Both are
+  reported, separately, rather than adding an assumption to a measurement
+  and presenting the sum as fact.
 """
 
 from datetime import datetime, timedelta
@@ -47,7 +53,10 @@ def _connect():
 
 def _tile_row(connection, since=None):
     """Counts and estimated minutes for everything, or since a date."""
-    where = "WHERE last_played >= ?" if since else ""
+    # Series rows exist to hold show-level ratings; they are not watched
+    # items and must not be counted as titles or minutes here.
+    where = ("WHERE media IN ('movie', 'episode')"
+             + (" AND last_played >= ?" if since else ""))
     params = (since,) if since else ()
     row = connection.execute(
         "SELECT "
@@ -104,14 +113,21 @@ def _daypart(hour):
 def _window(connection, start_day, end_day):
     """Measured minutes in a date range, split the ways the panel shows."""
     rows = connection.execute(
-        "SELECT day, hour, media, watched_seconds FROM plays "
+        "SELECT day, hour, media, watched_seconds, "
+        "COALESCE(assumed, 0) FROM plays "
         "WHERE day >= ? AND day <= ?", (start_day, end_day)).fetchall()
     per_day = {}
+    per_day_assumed = {}
     dayparts = {name: 0 for name, _, _ in DAYPARTS}
-    movies = shows = 0
-    for day, hour, media, seconds in rows:
+    movies = shows = measured = assumed = 0
+    for day, hour, media, seconds, is_assumed in rows:
         minutes = (seconds or 0) / 60.0
         per_day[day] = per_day.get(day, 0.0) + minutes
+        if is_assumed:
+            assumed += minutes
+            per_day_assumed[day] = per_day_assumed.get(day, 0.0) + minutes
+        else:
+            measured += minutes
         if hour is not None and hour >= 0:
             dayparts[_daypart(hour)] += 1
         if media == "movie":
@@ -119,8 +135,10 @@ def _window(connection, start_day, end_day):
         elif media == "episode":
             shows += minutes
     total = sum(per_day.values())
-    return {"per_day": per_day, "dayparts": dayparts, "movies": movies,
-            "shows": shows, "total": total, "sessions": len(rows)}
+    return {"per_day": per_day, "per_day_assumed": per_day_assumed,
+            "dayparts": dayparts, "movies": movies, "shows": shows,
+            "total": total, "measured": measured, "assumed": assumed,
+            "sessions": len(rows)}
 
 
 def _days(start, count):
@@ -154,6 +172,8 @@ def screen_time(days=7, now=None):
     breakdown = [{"date": day,
                   "weekday": datetime.strptime(day, "%Y-%m-%d").weekday(),
                   "minutes": round(current["per_day"].get(day, 0.0)),
+                  "assumed_minutes": round(
+                      current["per_day_assumed"].get(day, 0.0)),
                   "today": day == today.strftime("%Y-%m-%d")}
                  for day in labels]
 
@@ -174,6 +194,9 @@ def screen_time(days=7, now=None):
                           "delta": round(average - previous_average)},
         "total": {"minutes": round(current["total"]),
                   "delta": round(current["total"] - earlier["total"])},
+        # Reported alongside every figure above, never folded into them.
+        "measured_minutes": round(current["measured"]),
+        "assumed_minutes": round(current["assumed"]),
         "waking": {"percent": round(100.0 * (average / 60.0) / WAKING_HOURS,
                                     1),
                    "delta": round(100.0 * ((average - previous_average) / 60.0)

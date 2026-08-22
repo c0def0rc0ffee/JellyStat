@@ -273,12 +273,17 @@ def _push_community_rating(item_id, score):
     return "community rating written"
 
 
-def rate(item_id, score, favourite=None, push=True):
+def rate(item_id, score, favourite=None, push=True, keep_local=False):
     """Store a score locally and mirror it to Jellyfin as far as it allows.
 
     Local first, deliberately: the addon's own database is the copy the user
     asked to keep, and a server that is down must not cost them the score
     they just gave. `score` of None clears the rating.
+
+    `keep_local` clears the rating on Jellyfin while leaving JellyStat's
+    own untouched. That is the "remove it from Jellyfin so the two cannot
+    contradict each other" case: the rating still exists here, Jellyfin
+    simply stops holding a different one.
     """
     if score is not None:
         score = max(0.0, min(10.0, float(score)))
@@ -326,11 +331,18 @@ def rate(item_id, score, favourite=None, push=True):
 
     from datetime import datetime
     with connection:
-        connection.execute(
-            "UPDATE items SET user_rating = ?, user_rating_at = ?, "
-            "rating_sync = ? WHERE id = ?",
-            (score, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-             state, item_id))
+        if keep_local:
+            # Only the server side changes; the local score is the thing
+            # being protected from contradiction, not removed.
+            connection.execute(
+                "UPDATE items SET jf_rating = NULL, rating_sync = ? "
+                "WHERE id = ?", (state, item_id))
+        else:
+            connection.execute(
+                "UPDATE items SET user_rating = ?, user_rating_at = ?, "
+                "rating_sync = ? WHERE id = ?",
+                (score, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                 state, item_id))
         if state == "synced":
             # The push succeeded, so Jellyfin now holds this exact score.
             connection.execute("UPDATE items SET jf_rating = ? WHERE id = ?",

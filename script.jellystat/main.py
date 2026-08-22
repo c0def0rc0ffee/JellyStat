@@ -140,24 +140,39 @@ def get_watched(creds, item_type):
                          "IncludeItemTypes": item_type,
                          "Recursive": "true",
                          "Filters": "IsPlayed",
+                         # ProviderIds carries IMDb/TMDb/TVDb, which is how
+                         # imported history from other trackers is matched
+                         # to this library exactly rather than by title.
                          "Fields": "Genres,CommunityRating,CriticRating,"
-                                   "ProductionYear",
+                                   "ProductionYear,ProviderIds",
                          "SortBy": "DatePlayed",
                          "SortOrder": "Descending",
                      })
     return result.get("Items", [])
 
 
-def get_series_genres(creds):
-    """Map series id -> genres, since episodes carry no genres of their own."""
+def get_series(creds):
+    """Every series in the library, with the fields the mirror stores.
+
+    Shows are items in their own right: they carry genres their episodes
+    lack, a rating of their own, and provider ids that imported data is
+    matched on. get_series_genres() is the older, narrower view of this.
+    """
     result = api_get(creds["base"], creds["token"],
                      "/Users/%s/Items" % creds["user_id"], {
                          "IncludeItemTypes": "Series",
                          "Recursive": "true",
-                         "Fields": "Genres",
+                         "Fields": "Genres,CommunityRating,CriticRating,"
+                                   "ProductionYear,ProviderIds",
                      })
-    return {series["Id"]: series.get("Genres", [])
-            for series in result.get("Items", [])}
+    return result.get("Items", [])
+
+
+def get_series_genres(creds, series=None):
+    """Map series id -> genres, since episodes carry no genres of their own."""
+    if series is None:
+        series = get_series(creds)
+    return {item["Id"]: item.get("Genres", []) for item in series}
 
 
 def parse_played_date(value):

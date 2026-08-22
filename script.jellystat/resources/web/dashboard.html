@@ -110,6 +110,23 @@ nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
   justify-content: flex-end; height: 100%; }
 .stbars .fill { background: var(--accent); border-radius: 4px 4px 0 0;
   min-height: 3px; }
+/* Assumed time is drawn hatched, so a bar made of runtimes nobody timed
+   never looks like one made of measured minutes. */
+.stbars .fill.assumed {
+  background: repeating-linear-gradient(135deg,
+    var(--accent) 0 3px, transparent 3px 6px);
+  border: 1px solid var(--accent); border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+}
+.stnote { font-size: 12px; color: var(--ink-dim); margin-top: 10px;
+  line-height: 1.5; }
+.stnote b { color: var(--ink); font-weight: 600; }
+.stkey { display: inline-block; width: 22px; height: 9px; vertical-align: -1px;
+  border-radius: 3px; margin: 0 4px 0 2px; }
+.stkey.m { background: var(--accent); }
+.stkey.a { background: repeating-linear-gradient(135deg,
+    var(--accent) 0 3px, transparent 3px 6px);
+  border: 1px solid var(--accent); }
 .stbars .fill.today { background: var(--panel); border: 1px solid var(--line); }
 .stlabels { display: flex; gap: 6px; margin-top: 6px; font-size: 11px;
   color: var(--ink-dim); }
@@ -196,6 +213,51 @@ nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
 .epcard .nm { font-size: 14px; font-weight: 600; }
 .epcard .ov { font-size: 12.5px; color: var(--ink-dim); margin-top: 5px;
   line-height: 1.45; }
+
+/* Trakt connection */
+.conn { display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  background: var(--panel-2); border-radius: 11px; padding: 14px 16px;
+  margin-bottom: 14px; }
+.conn .dotbig { width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: var(--ink-dim); }
+.conn .dotbig.on { background: var(--episode); }
+.conn .who { flex: 1; min-width: 160px; font-size: 13.5px; }
+.conn .who .sub { color: var(--ink-dim); font-size: 12.5px; margin-top: 3px; }
+.pincode { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 27px; font-weight: 700; letter-spacing: .14em;
+  background: var(--bg); border: 1px dashed var(--accent);
+  border-radius: 10px; padding: 10px 16px; display: inline-block;
+  margin: 4px 0 8px; }
+
+/* Trakt import */
+.catlist { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+.cat { display: flex; gap: 12px; align-items: flex-start;
+  background: var(--panel-2); border-radius: 11px; padding: 13px 15px;
+  border: 1px solid transparent; }
+.cat.on { border-color: var(--accent); }
+.cat input { margin-top: 3px; width: 17px; height: 17px; flex: none;
+  accent-color: var(--accent); cursor: pointer; }
+.cat .body { flex: 1; min-width: 0; }
+.cat .nm { font-size: 14px; font-weight: 600; }
+.cat .sub { font-size: 12.5px; color: var(--ink-dim); margin-top: 4px;
+  line-height: 1.5; }
+.cat .warn { color: var(--warn); }
+.cat .n { font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums;
+  min-width: 74px; text-align: right; }
+.eg { font-size: 12px; color: var(--ink-dim); margin-top: 6px;
+  font-variant-numeric: tabular-nums; }
+.eg b { color: var(--ink); font-weight: 600; }
+
+/* Backups */
+.baklist { font-size: 13px; }
+.bak { display: flex; gap: 10px; align-items: center; padding: 7px 0;
+  border-bottom: 1px solid var(--line); }
+.bak:last-child { border-bottom: 0; }
+.bak .w { font-size: 11.5px; border-radius: 5px; padding: 1px 7px;
+  border: 1px solid var(--line); color: var(--ink-dim); }
+.bak .w.before { color: #ffb86b; border-color: #ffb86b55; }
+.bak .w.after { color: #4ad991; border-color: #4ad99155; }
+.bak .grow { flex: 1; }
 
 /* Genre filter chips */
 .genrefilter { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
@@ -704,6 +766,53 @@ button.danger { color: var(--warn); }
       <div class="filerow">
         <a class="action" id="exportbtn" href="/api/export"
            download>Download backup</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Jellyfin agreement</h2>
+      <p class="hint">JellyStat holds what you think of a title; Jellyfin
+        keeps its own copy. Jellyfin missing a rating is harmless. Jellyfin
+        holding a <b>different</b> one is a contradiction nobody can settle
+        from the data, so those are listed here and fixed deliberately:
+        either push JellyStat's score across, or remove Jellyfin's so only
+        one copy exists.</p>
+      <div id="reconcile"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Connect to Trakt</h2>
+      <p class="hint">Sign in once and JellyStat can pull your history and
+        ratings straight from Trakt, with no export file. Trakt issues
+        credentials per application, so create one at
+        <b>trakt.tv/oauth/applications</b> with the redirect URI
+        <code>urn:ietf:wg:oauth:2.0:oob</code>, then paste its Client ID and
+        Secret into the addon's settings (Web dashboard → Trakt). They stay
+        on this box.</p>
+      <div id="traktconn"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Import from a Trakt export file</h2>
+      <p class="hint">Select a whole Trakt export folder. The files are read
+        here in the browser, matched against your library, and nothing is
+        written until you have seen what was found and ticked what to
+        import. A backup of the database is taken automatically immediately
+        before and immediately after.</p>
+      <div class="filerow">
+        <input type="file" id="traktfiles" multiple accept=".json">
+        <button class="action" id="traktstage">Read the export</button>
+      </div>
+      <div id="traktreport"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Automatic backups</h2>
+      <p class="hint">Taken either side of every import, newest first. The
+        most recent <span id="bakkeep">12</span> are kept.</p>
+      <div class="baklist" id="backups"></div>
+      <div class="filerow" style="margin-top:12px">
+        <button class="action" id="baknow">Back up now</button>
       </div>
     </section>
 
@@ -2565,6 +2674,7 @@ function renderScreenTime() {
   if (!SCREEN) return;
   const host = $("screentime");
   host.textContent = "";
+  host.parentNode.querySelectorAll(".stnote").forEach((n) => n.remove());
   $("st-window").textContent = SCREEN.measured
     ? ("Measured from the play log, " + fmtDay(SCREEN.from) + " to "
        + fmtDay(SCREEN.to) + ". Comparisons are against the previous "
@@ -2582,11 +2692,25 @@ function renderScreenTime() {
                   dur(SCREEN.breakdown.reduce((a, d) => a + d.minutes, 0))));
   const bars = el("div", { class: "stbars" });
   SCREEN.breakdown.forEach((day) => {
+    const measured = Math.max(0, day.minutes - (day.assumed_minutes || 0));
     const col = el("div", { class: "col",
-                            title: fmtDay(day.date) + ": " + dur(day.minutes) });
-    const fill = el("div", { class: "fill" + (day.today ? " today" : "") });
-    fill.style.height = Math.max(3, 100 * day.minutes / peak) + "%";
-    col.append(fill);
+                            title: fmtDay(day.date) + ": " + dur(day.minutes)
+                              + (day.assumed_minutes
+                                 ? " (" + dur(day.assumed_minutes)
+                                   + " assumed)" : "") });
+    /* Assumed sits above measured, so the solid part of a bar is always
+       the part that was actually timed. */
+    if (day.assumed_minutes) {
+      const top = el("div", { class: "fill assumed" });
+      top.style.height = Math.max(2, 100 * day.assumed_minutes / peak) + "%";
+      col.append(top);
+    }
+    if (measured || !day.assumed_minutes) {
+      const fill = el("div", { class: "fill" + (day.today ? " today" : "") });
+      fill.style.height = Math.max(day.minutes ? 3 : 2,
+                                   100 * measured / peak) + "%";
+      col.append(fill);
+    }
     bars.append(col);
   });
   daily.append(bars);
@@ -2625,6 +2749,23 @@ function renderScreenTime() {
                      SCREEN.movies.delta, (v) => dur(Math.abs(v))));
   host.append(stCard("Shows", dur(SCREEN.shows.minutes), SCREEN.shows.delta,
                      (v) => dur(Math.abs(v))));
+
+  const assumed = SCREEN.assumed_minutes || 0;
+  const measured = SCREEN.measured_minutes || 0;
+  if (assumed) {
+    const note = el("p", { class: "stnote" });
+    note.append(el("span", { class: "stkey m" }), document.createTextNode(" "));
+    note.append(el("b", {}, dur(measured)), document.createTextNode(" measured on this box"));
+    note.append(document.createTextNode(" · "));
+    note.append(el("span", { class: "stkey a" }), document.createTextNode(" "));
+    note.append(el("b", {}, dur(assumed)),
+                document.createTextNode(" assumed from runtimes. Imported "
+                  + "history records that something was played, never for "
+                  + "how long, so those sittings are credited with the "
+                  + "item's full runtime."));
+    /* The note belongs to the panel, not to the grid of cards. */
+    $("screentime").parentNode.append(note);
+  }
 }
 
 /* ---------- now playing ---------- */
@@ -2705,6 +2846,497 @@ function startNowPlaying() {
   npTimer = setInterval(pollNowPlaying, 15000);
 }
 
+/* ---------- Jellyfin agreement ---------- */
+
+let RECON = null;
+let reconTimer = null;
+
+async function loadReconcile() {
+  try {
+    const response = await fetch("/api/reconcile", { cache: "no-store" });
+    if (!response.ok) return;
+    RECON = await response.json();
+  } catch (err) { return; }
+  renderReconcile();
+}
+
+function renderReconcile() {
+  const host = $("reconcile");
+  if (!RECON) return;
+  host.textContent = "";
+
+  const facts = el("div", { class: "facts" });
+  [[num(RECON.rated_here), "rated in JellyStat"],
+   [num(RECON.agreeing), "match Jellyfin"],
+   [num(RECON.missing_on_jellyfin), "not on Jellyfin"],
+   [num(RECON.contradicting), "contradict Jellyfin"],
+   [num(RECON.only_on_jellyfin), "only on Jellyfin"]]
+    .forEach(([value, label]) => {
+      const span = el("span");
+      span.append(el("b", {}, value), document.createTextNode(" " + label));
+      facts.append(span);
+    });
+  host.append(facts);
+
+  if (RECON.examples && RECON.examples.length) {
+    const list = el("p", { class: "eg" });
+    list.append(document.createTextNode("Disagreeing, e.g. "));
+    RECON.examples.slice(0, 4).forEach((x, i) => {
+      if (i) list.append(document.createTextNode(", "));
+      list.append(el("b", {}, x.name));
+      list.append(document.createTextNode(" here " + x.here
+        + " vs Jellyfin " + x.jellyfin));
+    });
+    host.append(list);
+  }
+
+  const job = RECON.job || {};
+  if (job.state === "running") {
+    const pct = job.total ? Math.round(100 * job.done / job.total) : 0;
+    const bar = el("div", { class: "bar" });
+    const fill = el("i");
+    fill.style.width = pct + "%";
+    bar.append(fill);
+    host.append(el("p", { class: "hint" },
+      (job.action === "push" ? "Writing to Jellyfin" : "Clearing on Jellyfin")
+      + ": " + num(job.done) + " of " + num(job.total)
+      + (job.failed ? " (" + job.failed + " failed)" : "")));
+    host.append(bar);
+    watchReconcile();
+    return;
+  }
+  if (job.state === "finished" && job.message) {
+    host.append(el("p", { class: "hint" }, job.message + "."));
+  }
+
+  const row = el("div", { class: "filerow" });
+  const outstanding = RECON.contradicting + RECON.missing_on_jellyfin;
+  const pushAll = el("button", { class: "action", type: "button" },
+    "Push all " + num(outstanding) + " to Jellyfin");
+  pushAll.addEventListener("click", () => startReconcile("push", "all"));
+  const pushConflicts = el("button", { class: "action", type: "button" },
+    "Fix the " + num(RECON.contradicting) + " contradictions only");
+  pushConflicts.addEventListener("click",
+    () => startReconcile("push", "contradicting"));
+  const clear = el("button", { class: "action", type: "button" },
+    "Remove Jellyfin's copies instead");
+  clear.addEventListener("click", () => startReconcile("clear", "all"));
+  if (outstanding) row.append(pushAll);
+  if (RECON.contradicting) row.append(pushConflicts, clear);
+  if (!outstanding) {
+    host.append(el("p", { class: "hint" },
+      "Nothing to settle: Jellyfin holds no rating that differs from this "
+      + "one."));
+  }
+  host.append(row);
+}
+
+async function startReconcile(action, scope) {
+  const host = $("reconcile");
+  host.textContent = "";
+  host.append(el("p", { class: "hint" }, "Starting…"));
+  try {
+    await fetch("/api/reconcile/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: action, scope: scope }),
+    });
+  } catch (err) { /* the poll below reports whatever happened */ }
+  loadReconcile();
+  watchReconcile();
+}
+
+function watchReconcile() {
+  if (reconTimer) clearInterval(reconTimer);
+  reconTimer = setInterval(async () => {
+    await loadReconcile();
+    if (!RECON || !RECON.job || RECON.job.state !== "running") {
+      clearInterval(reconTimer);
+      reconTimer = null;
+    }
+  }, 2000);
+}
+
+/* ---------- Trakt connection ---------- */
+
+let CONN = null;
+let connTimer = null;
+
+async function loadConnection() {
+  try {
+    const response = await fetch("/api/trakt/status", { cache: "no-store" });
+    if (!response.ok) return;
+    CONN = await response.json();
+  } catch (err) { return; }
+  renderConnection();
+}
+
+function renderConnection() {
+  const host = $("traktconn");
+  if (!CONN) return;
+  host.textContent = "";
+
+  const box = el("div", { class: "conn" });
+  box.append(el("span", { class: "dotbig" + (CONN.connected ? " on" : "") }));
+  const who = el("div", { class: "who" });
+  if (CONN.connected) {
+    who.append(el("div", {}, "Connected" + (CONN.username
+      ? " as " + CONN.username : "")));
+    who.append(el("div", { class: "sub" }, CONN.connected_at
+      ? "Signed in " + fmtStamp(CONN.connected_at) : ""));
+  } else if (!CONN.configured) {
+    who.append(el("div", {}, "Not set up"));
+    who.append(el("div", { class: "sub" },
+      "Add a Trakt Client ID and Secret in the addon's settings first."));
+  } else {
+    who.append(el("div", {}, "Not connected"));
+    who.append(el("div", { class: "sub" },
+      "Sign in once to pull your history and ratings directly."));
+  }
+  box.append(who);
+
+  if (CONN.connected) {
+    const fetchBtn = el("button", { class: "action", type: "button" },
+                        "Fetch everything from Trakt");
+    const say = el("span", { class: "say" });
+    fetchBtn.addEventListener("click", () => fetchFromTrakt(fetchBtn, say));
+    const off = el("button", { class: "action", type: "button" },
+                   "Disconnect");
+    off.addEventListener("click", async () => {
+      await fetch("/api/trakt/disconnect", { method: "POST" });
+      loadConnection();
+    });
+    box.append(fetchBtn, off, say);
+  } else if (CONN.configured) {
+    const go = el("button", { class: "action", type: "button" },
+                  "Sign in to Trakt");
+    go.addEventListener("click", async () => {
+      go.disabled = true;
+      try {
+        const response = await fetch("/api/trakt/connect", { method: "POST" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || response.status);
+        CONN = data;
+        renderConnection();
+        watchConnection();
+      } catch (err) {
+        host.append(el("p", { class: "empty" }, err.message));
+      } finally { go.disabled = false; }
+    });
+    box.append(go);
+  }
+  host.append(box);
+
+  const device = CONN.device || {};
+  if (!CONN.connected && device.state === "waiting" && device.code) {
+    const steps = el("div");
+    steps.append(el("p", { class: "hint" },
+      "On any device, open " + (device.url || "trakt.tv/activate")
+      + " and enter this code. This page will notice when you have."));
+    steps.append(el("div", { class: "pincode" }, device.code));
+    if (CONN.expires_in) {
+      steps.append(el("p", { class: "hint" },
+        "The code expires in " + Math.round(CONN.expires_in / 60)
+        + " minutes."));
+    }
+    host.append(steps);
+  }
+  if (device.state === "failed" && device.message) {
+    host.append(el("p", { class: "empty" }, device.message));
+  }
+}
+
+/* Poll while a sign-in is pending, and stop as soon as it resolves. */
+function watchConnection() {
+  if (connTimer) clearInterval(connTimer);
+  connTimer = setInterval(async () => {
+    await loadConnection();
+    const state = (CONN && CONN.device && CONN.device.state) || "idle";
+    if (state !== "waiting") {
+      clearInterval(connTimer);
+      connTimer = null;
+    }
+  }, 4000);
+}
+
+async function fetchFromTrakt(button, say) {
+  button.disabled = true;
+  button.textContent = "Fetching…";
+  say.textContent = "Reading your whole Trakt history; this can take a "
+    + "minute.";
+  const host = $("traktreport");
+  host.textContent = "";
+  try {
+    const response = await fetch("/api/trakt/fetch", { method: "POST" });
+    const report = await response.json();
+    if (!response.ok) throw new Error(report.error || response.status);
+    TRAKT = report;
+    say.textContent = "";
+    renderTraktReport();
+    /* The report lives in the import panel below, so send the reader there. */
+    $("traktreport").scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (err) {
+    say.textContent = "Could not fetch: " + err.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Fetch everything from Trakt";
+  }
+}
+
+/* ---------- Trakt import ---------- */
+
+let TRAKT = null;
+
+/* Trakt exports a folder of files whose names carry no guarantees, so the
+   browser reads each one and asks the parser what it is. Anything not
+   recognised is simply left out, which is why you can select all 249 files
+   and let it sort them. */
+const TRAKT_KINDS = {
+  history: (row) => "watched_at" in row && "action" in row,
+  "ratings-movie": (row) => "rated_at" in row && row.type === "movie",
+  "ratings-episode": (row) => "rated_at" in row && row.type === "episode",
+  "ratings-show": (row) => "rated_at" in row && row.type === "show",
+};
+
+function classify(records) {
+  if (!Array.isArray(records) || !records.length) return null;
+  const row = records[0];
+  if (!row || typeof row !== "object") return null;
+  for (const kind in TRAKT_KINDS) {
+    if (TRAKT_KINDS[kind](row)) return kind;
+  }
+  return null;
+}
+
+async function readTraktFiles(files) {
+  const envelope = {};
+  let skipped = 0;
+  for (const file of files) {
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch (err) {
+      skipped += 1;
+      continue;
+    }
+    const kind = classify(data);
+    if (!kind) { skipped += 1; continue; }
+    envelope[kind] = (envelope[kind] || []).concat(data);
+  }
+  return { envelope: envelope, skipped: skipped };
+}
+
+$("traktstage").addEventListener("click", async () => {
+  const files = [...$("traktfiles").files];
+  const host = $("traktreport");
+  if (!files.length) {
+    host.textContent = "";
+    host.append(el("p", { class: "empty" },
+      "Choose the files from your Trakt export first."));
+    return;
+  }
+  const button = $("traktstage");
+  button.disabled = true;
+  button.textContent = "Reading…";
+  host.textContent = "";
+  host.append(el("p", { class: "hint" },
+    "Reading " + files.length + " files…"));
+  try {
+    const { envelope, skipped } = await readTraktFiles(files);
+    if (!Object.keys(envelope).length) {
+      throw new Error("None of those files are Trakt history or ratings.");
+    }
+    host.textContent = "";
+    host.append(el("p", { class: "hint" },
+      "Matching against your library — this reads your whole film "
+      + "catalogue and can take a minute."));
+    const response = await fetch("/api/trakt/stage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files: envelope }),
+    });
+    const report = await response.json();
+    if (!response.ok) throw new Error(report.error || response.status);
+    report.skipped_files = skipped;
+    TRAKT = report;
+    renderTraktReport();
+  } catch (err) {
+    host.textContent = "";
+    host.append(el("p", { class: "empty" },
+      "Could not read that export: " + err.message));
+  } finally {
+    button.disabled = false;
+    button.textContent = "Read the export";
+  }
+});
+
+function catLine(key, cat) {
+  if (key === "history") {
+    const parts = [
+      num(cat.records) + " plays from " + fmtDay(cat.from) + " to "
+        + fmtDay(cat.to),
+      num(cat.matched) + " matched to your library",
+    ];
+    if (cat.unmatched) {
+      parts.push(num(cat.unmatched) + " not on your server (imported anyway)");
+    }
+    if (cat.duplicates) {
+      parts.push(num(cat.duplicates) + " already logged, skipped");
+    }
+    return parts.join(" · ");
+  }
+  const parts = [num(cat.new) + " new"];
+  if (cat.overwritten) parts.push(num(cat.overwritten) + " overwritten");
+  if (cat.unchanged) parts.push(num(cat.unchanged) + " already the same");
+  if (cat.unmatched) parts.push(num(cat.unmatched) + " not in your library");
+  return parts.join(" · ");
+}
+
+function renderTraktReport() {
+  const host = $("traktreport");
+  host.textContent = "";
+  if (!TRAKT) return;
+
+  const list = el("div", { class: "catlist" });
+  const order = ["history", "ratings-movie", "ratings-episode",
+                 "ratings-show"];
+  order.forEach((key) => {
+    const cat = TRAKT.categories[key];
+    if (!cat || !cat.records) return;
+    const row = el("label", { class: "cat on" });
+    const box = el("input", { type: "checkbox" });
+    box.checked = true;
+    box.dataset.key = key;
+    box.addEventListener("change", () => {
+      row.classList.toggle("on", box.checked);
+    });
+    const body = el("div", { class: "body" });
+    body.append(el("div", { class: "nm" }, cat.label));
+    body.append(el("div", { class: "sub" }, catLine(key, cat)));
+    if (key === "history" && cat.assumed_runtime) {
+      body.append(el("div", { class: "sub warn" },
+        num(cat.assumed_runtime) + " have no known runtime, so their length "
+        + "is a guess. Trakt never records how long a play lasted, so every "
+        + "imported sitting's duration is assumed from the runtime and "
+        + "marked as such."));
+    }
+    if (cat.examples && cat.examples.length) {
+      const eg = el("div", { class: "eg" });
+      eg.append(document.createTextNode("Trakt wins, e.g. "));
+      cat.examples.slice(0, 3).forEach((x, i) => {
+        if (i) eg.append(document.createTextNode(", "));
+        eg.append(el("b", {}, x.title));
+        eg.append(document.createTextNode(" " + x.from + " → " + x.to));
+      });
+      body.append(eg);
+    }
+    row.append(box, body,
+               el("div", { class: "n" }, num(cat.records)));
+    list.append(row);
+  });
+  host.append(list);
+
+  if (TRAKT.skipped_files) {
+    host.append(el("p", { class: "hint" },
+      TRAKT.skipped_files + " other files in the export were not history or "
+      + "ratings and were ignored."));
+  }
+  host.append(el("p", { class: "hint" },
+    "Where a rating exists in both places and they disagree, "
+    + "Trakt wins. Imported ratings stay in JellyStat and are not written "
+    + "back to Jellyfin."));
+
+  const row = el("div", { class: "filerow" });
+  const go = el("button", { class: "action", type: "button" },
+                "Back up and import the ticked parts");
+  const say = el("span", { class: "say" });
+  go.addEventListener("click", () => runTraktImport(go, say));
+  row.append(go, say);
+  host.append(row);
+}
+
+async function runTraktImport(button, say) {
+  const chosen = [...document.querySelectorAll("#traktreport input:checked")]
+    .map((box) => box.dataset.key);
+  if (!chosen.length) {
+    say.textContent = "Nothing is ticked.";
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Backing up and importing…";
+  say.textContent = "";
+  try {
+    const response = await fetch("/api/trakt/commit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TRAKT.token, categories: chosen }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || response.status);
+    const bits = [];
+    if (result.history) bits.push(num(result.history.added) + " plays");
+    Object.keys(result.ratings || {}).forEach((key) => {
+      bits.push(num(result.ratings[key].written) + " "
+        + key.replace("ratings-", "") + " ratings");
+    });
+    say.textContent = "Imported " + bits.join(", ")
+      + ". Backups taken either side.";
+    TRAKT = null;
+    button.textContent = "Imported";
+    loadBackups();
+    load(true);
+    loadTiles();
+    loadScreenTime();
+  } catch (err) {
+    say.textContent = "Import failed: " + err.message
+      + " — your backup is in the list below.";
+    button.disabled = false;
+    button.textContent = "Back up and import the ticked parts";
+    loadBackups();
+  }
+}
+
+/* ---------- backups ---------- */
+
+async function loadBackups() {
+  const host = $("backups");
+  try {
+    const response = await fetch("/api/backups", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    $("bakkeep").textContent = data.keep;
+    host.textContent = "";
+    if (!data.backups.length) {
+      host.append(el("p", { class: "empty" },
+        "No backups yet. One is taken automatically either side of any "
+        + "import."));
+      return;
+    }
+    data.backups.forEach((b) => {
+      const row = el("div", { class: "bak" });
+      row.append(el("span", { class: "w " + b.when }, b.when));
+      row.append(el("span", { class: "grow" },
+                    fmtStamp(b.taken_at) + " · " + b.reason));
+      row.append(el("span", {},
+                    (b.bytes / 1048576).toFixed(1) + " MB"));
+      const link = el("a", { class: "action",
+                             href: "/api/backup/download?name="
+                                   + encodeURIComponent(b.name),
+                             download: "" }, "Download");
+      row.append(link);
+      host.append(row);
+    });
+  } catch (err) { /* the panel simply stays as it was */ }
+}
+
+$("baknow").addEventListener("click", async (evt) => {
+  evt.target.disabled = true;
+  try {
+    await fetch("/api/backup/create", { method: "POST" });
+    await loadBackups();
+  } finally { evt.target.disabled = false; }
+});
+
 /* ---------- views ---------- */
 
 const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
@@ -2724,7 +3356,12 @@ function showView(name) {
 document.querySelectorAll("nav.side button").forEach((btn) => {
   btn.addEventListener("click", () => {
     showView(btn.dataset.view);
-    if (btn.dataset.view === "data") renderDataFacts();
+    if (btn.dataset.view === "data") {
+      renderDataFacts();
+      loadBackups();
+      loadConnection();
+      loadReconcile();
+    }
     if (btn.dataset.view === "settings") renderSettings();
     if (btn.dataset.view === "movies" || btn.dataset.view === "tv") {
       loadMediaPage(btn.dataset.view);

@@ -69,6 +69,14 @@ MIGRATIONS = [
     "ALTER TABLE plays ADD COLUMN source TEXT NOT NULL DEFAULT 'kodi'",
     "ALTER TABLE plays ADD COLUMN device TEXT",
     "ALTER TABLE plays ADD COLUMN batch_id INTEGER",
+    # Whether watched_seconds was measured or inferred from the runtime.
+    # Trakt and similar services record that a play happened and never how
+    # long it lasted, so their rows carry a whole runtime that nobody
+    # actually timed. Screen time says so rather than presenting 400 days
+    # of assumption as measurement.
+    "ALTER TABLE plays ADD COLUMN assumed INTEGER NOT NULL DEFAULT 0",
+    # The mirror row this play belongs to, where one could be found.
+    "ALTER TABLE plays ADD COLUMN item_id TEXT",
 ]
 
 
@@ -215,17 +223,22 @@ def summary():
     """Headline numbers about the log itself, for the dashboard's cards."""
     rows = _rows("SELECT COUNT(*), SUM(watched_seconds), "
                  "SUM(CASE WHEN media = 'movie' THEN 1 ELSE 0 END), "
-                 "SUM(CASE WHEN media = 'episode' THEN 1 ELSE 0 END) "
+                 "SUM(CASE WHEN media = 'episode' THEN 1 ELSE 0 END), "
+                 "SUM(CASE WHEN assumed = 1 THEN 1 ELSE 0 END), "
+                 "SUM(CASE WHEN assumed = 1 THEN watched_seconds ELSE 0 END) "
                  "FROM plays")
     if not rows or not rows[0][0]:
         return {"sessions": 0, "hours_watched": 0.0, "movies": 0,
-                "episodes": 0, "since": None}
-    count, seconds, movies, episodes = rows[0]
+                "episodes": 0, "since": None, "assumed": 0,
+                "assumed_hours": 0.0}
+    count, seconds, movies, episodes, assumed, assumed_seconds = rows[0]
     return {
         "sessions": count,
         "hours_watched": round((seconds or 0) / 3600.0, 1),
         "movies": movies or 0,
         "episodes": episodes or 0,
+        "assumed": assumed or 0,
+        "assumed_hours": round((assumed_seconds or 0) / 3600.0, 1),
         "since": since(),
     }
 

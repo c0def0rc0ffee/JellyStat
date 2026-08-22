@@ -289,7 +289,65 @@ A failed write never costs you the score: it is stored locally first, and
 the sync state is kept beside it so the page can tell you what did and did
 not reach the server.
 
+### Importing a Trakt export
+
+**Data → Import from Trakt** takes a whole Trakt export folder. The files are
+read in the browser, classified by shape rather than by filename, and sent
+as one batch, so you select all of them and let it sort out which are watch
+history and which are ratings.
+
+Nothing is written until you have seen what was found. The staging screen
+reports, per category, how many records there are, how many matched your
+library, how many would be overwritten and with what, then you tick the
+categories to import.
+
+- **Matching** is by IMDb, TMDb and TVDb id first and by title only as a
+  fallback, which is the difference between eight episodes in ten finding
+  their row and virtually all of them. Anything the mirror cannot place is
+  looked up on the Jellyfin server itself, because the mirror only holds
+  items that have been *played* and a title sitting unwatched on the server
+  has no row there.
+- **Records that match nothing are still imported.** The play happened; this
+  library simply has no copy of it.
+- **Durations are assumed.** Trakt records that something was played and
+  never for how long, so an imported sitting is credited with the item's
+  runtime and flagged, and Screen time reports measured and assumed
+  separately rather than presenting one as the other.
+- **Where a rating exists in both places and they disagree, Trakt wins.**
+  Imported ratings land in JellyStat, which is the record of what you think
+  of a title; Jellyfin is expected to match it, not the other way round.
+- A **backup is taken automatically immediately before and immediately
+  after** every import.
+
+### Jellyfin agreement
+
+JellyStat holds your score; Jellyfin keeps its own copy and the two drift,
+because a Trakt import writes thousands of scores here that were never sent
+there. **Data → Jellyfin agreement** reports how they compare and settles it
+deliberately rather than silently:
+
+- Jellyfin **missing** a rating is harmless and is only listed.
+- Jellyfin holding a **different** one is a contradiction nobody can settle
+  from the data, so those are listed with both values.
+- **Push** writes JellyStat's score to Jellyfin so the two match; **remove
+  Jellyfin's copies** clears them there, leaving the rating only here.
+  Either way the end state is the same: never a contradiction, at worst a
+  gap.
+
+Both run in the background with progress, since thousands of ratings mean
+thousands of requests.
+
+A mirror sync never overwrites a rating JellyStat already holds; it only
+fills gaps. Before that rule existed, the sync after the first Trakt import
+reverted sixty imported ratings to Jellyfin's values within two minutes.
+
 ### Backup and restore
+
+**Data → Automatic backups** lists the snapshots taken either side of every
+import, newest first, each downloadable; the most recent twelve are kept and
+older ones dropped. **Back up now** takes one on demand. Snapshots use
+SQLite's own backup API, so one taken while the service is mid-write is
+still a consistent database rather than a torn file.
 
 **Data → Download backup** exports the whole database (mirror, snapshots,
 sitting log) as one `.db` file, served as a point-in-time snapshot so a
