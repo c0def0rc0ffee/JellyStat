@@ -206,28 +206,54 @@ def filter_recent(items, days=30):
 # Genres
 # ---------------------------------------------------------------------------
 
+# One label in, one *or more* genres out. Television and film are tagged
+# from different vocabularies - TMDb gives films "Action" and "Adventure"
+# separately but television a single "Action & Adventure" - and left alone
+# that splits a genre's evidence in three: a show tagged the combined way
+# counts toward neither of the two the films use. Everything downstream
+# (stats, the taste profile, the genre filters) reads through
+# effective_genres, so aliasing here is the one place that fixes all of it.
 GENRE_ALIASES = {
     "sci-fi": "Science Fiction",
     "sci fi": "Science Fiction",
     "scifi": "Science Fiction",
     "science-fiction": "Science Fiction",
     "science fiction": "Science Fiction",
-    # Fantasy is its own genre. TMDb's *combined* TV genre has no way to be
-    # split, so it lands on Science Fiction rather than being dropped.
-    "sci-fi & fantasy": "Science Fiction",
-    "sci fi & fantasy": "Science Fiction",
-    "science fiction & fantasy": "Science Fiction",
+    # A combined label counts in every genre it names, with none of them
+    # dropped and none of them guessed at. The alternative - picking the
+    # "real" one - is the addon deciding a show is science fiction and not
+    # fantasy on no evidence, and it silently loses a genre's worth of
+    # titles from every count, filter and taste profile downstream.
+    "sci-fi & fantasy": ("Science Fiction", "Fantasy"),
+    "sci fi & fantasy": ("Science Fiction", "Fantasy"),
+    "science fiction & fantasy": ("Science Fiction", "Fantasy"),
+    "action & adventure": ("Action", "Adventure"),
+    "action and adventure": ("Action", "Adventure"),
+    "war & politics": ("War", "Politics"),
+    "war and politics": ("War", "Politics"),
     "animated": "Animation",
     "kids": "Family",
     "children": "Family",
 }
 
 
-def canonical_genre(name):
+def genre_aliases(name):
+    """Every genre a label stands for, in order. Always a tuple."""
     name = (name or "").strip()
     if not name:
-        return "Unknown"
-    return GENRE_ALIASES.get(name.lower(), name)
+        return ("Unknown",)
+    mapped = GENRE_ALIASES.get(name.lower(), name)
+    return (mapped,) if isinstance(mapped, str) else tuple(mapped)
+
+
+def canonical_genre(name):
+    """The single genre a label reduces to.
+
+    Where a label stands for more than one, this is the first - the one a
+    "primary genre only" breakdown should use. Callers that want all of
+    them want genre_aliases, or effective_genres for a whole item.
+    """
+    return genre_aliases(name)[0]
 
 
 def effective_genres(item, genre_lookup=None):
@@ -237,6 +263,10 @@ def effective_genres(item, genre_lookup=None):
     both. Counts across genres therefore sum to more than the number of
     titles, which is why the genre views offer a "primary only" mode when a
     breakdown that adds up to 100% is what is wanted.
+
+    A label may stand for more than one genre - television's "Action &
+    Adventure" is the two genres film tags separately - and is expanded to
+    all of them, deduped against whatever else the item carries.
 
     (Until v0.15.0 a "sci-fi dominance" rule collapsed anything science
     fiction down to that single genre. It suppressed 1,771 genre tags on a
@@ -254,10 +284,13 @@ def effective_genres(item, genre_lookup=None):
     genres = []
     seen = set()
     for genre in raw:
-        canon = canonical_genre(genre)
-        if canon.lower() not in seen:
-            seen.add(canon.lower())
-            genres.append(canon)
+        # One label can stand for several genres, so this expands rather
+        # than maps. Dedup still runs across the lot: a film tagged both
+        # "Action & Adventure" and "Action" is Action once, not twice.
+        for canon in genre_aliases(genre):
+            if canon.lower() not in seen:
+                seen.add(canon.lower())
+                genres.append(canon)
     return genres or ["Unknown"]
 
 
