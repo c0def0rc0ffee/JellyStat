@@ -159,7 +159,8 @@ nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
   height: 4px; overflow: hidden; margin-bottom: 5px; }
 #nowplaying .bar i { display: block; height: 100%; background: var(--accent); }
 #nowplaying .foot { display: flex; justify-content: space-between;
-  font-size: 11.5px; color: var(--ink-dim); }
+  gap: 8px; font-size: 11.5px; color: var(--ink-dim); }
+#nowplaying .foot .pct { color: var(--ink); font-variant-numeric: tabular-nums; }
 #nowplaying .x { position: absolute; top: 6px; right: 8px; border: 0;
   background: transparent; color: var(--ink-dim); cursor: pointer;
   font-size: 15px; line-height: 1; padding: 2px 4px; }
@@ -2771,7 +2772,9 @@ function renderScreenTime() {
 /* ---------- now playing ---------- */
 
 let npTimer = null;
+let npTick = null;
 let npDismissed = null;
+let npLive = null;   /* the last state, plus the nodes the ticker rewrites */
 
 function endsAt(secondsLeft) {
   const when = new Date(Date.now() + secondsLeft * 1000);
@@ -2783,9 +2786,39 @@ function endsAt(secondsLeft) {
   return String(h).padStart(2, "0") + ":" + m;
 }
 
+/* Where playback has got to right now, counting the seconds since the poll
+   that fetched it - so the bar creeps and the countdown falls between the
+   fifteen-second refreshes instead of standing still. */
+function npProgress() {
+  const state = npLive && npLive.state;
+  if (!state) return null;
+  const gone = state.paused ? 0 : (Date.now() - npLive.at) / 1000;
+  const total = state.total || 0;
+  if (!total) {
+    return { remaining: Math.max((state.remaining || 0) - gone, 0),
+             percent: Math.max(0, Math.min(state.percent || 0, 100)) };
+  }
+  const position = Math.min((state.position || 0) + gone, total);
+  return { remaining: Math.max(total - position, 0),
+           percent: Math.max(0, Math.min(position * 100 / total, 100)) };
+}
+
+function paintNowPlaying() {
+  const now = npProgress();
+  if (!now) return;
+  npLive.fill.style.width = now.percent + "%";
+  const left = Math.round(now.remaining / 60);
+  npLive.left.textContent = left ? left + "m left" : "finishing";
+  npLive.pct.textContent = Math.round(now.percent) + "%";
+  npLive.ends.textContent = now.remaining
+    ? "Ends at " + endsAt(now.remaining) : "";
+}
+
 function renderNowPlaying(state) {
   const box = $("nowplaying");
   if (!state || !state.playing || npDismissed === state.item_id) {
+    if (npTick) { clearInterval(npTick); npTick = null; }
+    npLive = null;
     box.className = "";
     box.textContent = "";
     return;
@@ -2806,16 +2839,20 @@ function renderNowPlaying(state) {
   body.append(title);
   const bar = el("div", { class: "bar" });
   const fill = el("i");
-  fill.style.width = Math.max(0, Math.min(state.percent, 100)) + "%";
   bar.append(fill);
   body.append(bar);
   const foot = el("div", { class: "foot" });
-  const left = Math.round(state.remaining / 60);
-  foot.append(el("span", {}, left ? left + "m left" : "finishing"),
-              el("span", {}, state.remaining
-                 ? "Ends at " + endsAt(state.remaining) : ""));
+  const leftText = el("span", {});
+  const pctText = el("span", { class: "pct" });
+  const endsText = el("span", {});
+  foot.append(leftText, pctText, endsText);
   body.append(foot);
   box.append(body);
+
+  npLive = { state: state, at: Date.now(), fill: fill, left: leftText,
+             pct: pctText, ends: endsText };
+  paintNowPlaying();
+  if (!npTick) npTick = setInterval(paintNowPlaying, 1000);
 
   const close = el("button", { class: "x", type: "button",
                                title: "Hide until the next thing plays" }, "\u00d7");

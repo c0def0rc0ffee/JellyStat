@@ -247,6 +247,17 @@ def status():
     total = _seconds(props.get("totaltime"))
     remaining = max(total - position, 0)
 
+    # Kodi's own `percentage` is not always in step with the clock it also
+    # reports - for plugin-fed playback it can sit at the figure from an
+    # earlier seek or resume. A bar that argues with "11m left" is worse
+    # than no bar, so the clock wins and Kodi's figure is only the fallback
+    # for a stream whose length is unknown.
+    if total > 0:
+        percent = position * 100.0 / total
+    else:
+        percent = float(props.get("percentage") or 0.0)
+    percent = round(max(0.0, min(percent, 100.0)), 1)
+
     title = item.get("title") or "Something"
     show = item.get("showtitle") or None
     label = title
@@ -271,6 +282,6 @@ def status():
         "position": position,
         "total": total,
         "remaining": remaining,
-        "percent": round(props.get("percentage") or 0.0, 1),
+        "percent": percent,
         "queued": queued,
     }
