@@ -78,6 +78,9 @@ RATING_COLUMNS = [
     # What Jellyfin holds, kept as its own column so "where is this score
     # saved" is answered from data rather than guessed from history.
     "ALTER TABLE items ADD COLUMN jf_rating REAL",
+    # Minutes, so watch-time totals cover the whole library rather than only
+    # the period the play log happens to reach back to.
+    "ALTER TABLE items ADD COLUMN runtime_minutes INTEGER",
 ]
 
 
@@ -129,6 +132,8 @@ def _row_from(item, media, series_genres):
         "play_count": int(user_data.get("PlayCount") or 0),
         "last_played": (user_data.get("LastPlayedDate") or "")[:19] or None,
         "jf_rating": _numeric(user_data.get("Rating")),
+        "runtime_minutes": (int(item["RunTimeTicks"] // 600000000)
+                            if item.get("RunTimeTicks") else None),
     }
 
 
@@ -241,11 +246,13 @@ def sync(movies, episodes, series_genres, utc_offset):
                             "INSERT INTO items (id, media, name, year, "
                             "series_id, series_name, season, episode, "
                             "genres, rating, critic, favourite, play_count, "
-                            "last_played, first_seen, last_seen, present) "
+                            "last_played, runtime_minutes, first_seen, "
+                            "last_seen, present) "
                             "VALUES (:id, :media, :name, :year, :series_id, "
                             ":series_name, :season, :episode, :genres, "
                             ":rating, :critic, :favourite, :play_count, "
-                            ":last_played, '%s', '%s', 1)" % (stamp, stamp),
+                            ":last_played, :runtime_minutes, '%s', '%s', 1)"
+                            % (stamp, stamp),
                             row)
                         if row["jf_rating"]:
                             connection.execute(
@@ -269,6 +276,7 @@ def sync(movies, episodes, series_genres, utc_offset):
                         "season = :season, episode = :episode, "
                         "genres = :genres, rating = :rating, "
                         "critic = :critic, "
+                        "runtime_minutes = :runtime_minutes, "
                         "favourite = :favourite, play_count = :play_count, "
                         "last_played = :last_played, last_seen = '%s', "
                         "present = 1 WHERE id = :id" % stamp, row)
@@ -452,7 +460,7 @@ def show_detail(name):
     connection = connect()
     rows = connection.execute(
         "SELECT name, season, episode, rating, play_count, last_played, "
-        "genres, present FROM items WHERE media = 'episode' "
+        "genres, present, series_id, id FROM items WHERE media = 'episode' "
         "AND LOWER(series_name) = ? "
         "ORDER BY last_played DESC",
         ((name or "").strip().lower(),)).fetchall()
@@ -462,7 +470,7 @@ def show_detail(name):
     episodes = [{
         "name": row[0], "season": row[1], "episode": row[2],
         "rating": row[3], "play_count": row[4], "last_played": row[5],
-        "present": bool(row[7]),
+        "present": bool(row[7]), "id": row[9],
     } for row in rows]
     seasons = {}
     for episode in episodes:
@@ -471,6 +479,9 @@ def show_detail(name):
     ratings = [e["rating"] for e in episodes if e["rating"]]
     detail = {
         "name": name,
+        # The series id lets the page ask Jellyfin for artwork, cast and the
+        # full episode list, none of which the mirror stores.
+        "series_id": rows[0][8],
         "genres": json.loads(rows[0][6] or "[]"),
         "episodes_watched": len(episodes),
         "plays": sum(e["play_count"] for e in episodes),

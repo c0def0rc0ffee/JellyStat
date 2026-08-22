@@ -75,6 +75,23 @@ within five minutes; restarting Kodi applies it immediately.
 
 ### What's on it
 
+At the top sit two **headline blocks**, this month and all time, counting
+episodes, shows, films, plays, hours watched and ratings given. Hours are
+estimated from each title's runtime times how often it was played, so they
+cover the whole library including everything watched before this addon
+existed.
+
+Below them, **Screen time** is measured rather than estimated: it comes from
+the play log's real sittings, so it only covers the period the log reaches
+back to. Daily bars for the last week, daily average, the split between
+morning, afternoon, evening and night, totals, the share of waking hours,
+and films against shows, each compared with the previous week.
+
+A **Now playing** card appears in the corner whenever the Kodi box is
+playing something, with the poster, a progress bar, how long is left and the
+clock time it will finish at. It polls every fifteen seconds and can be
+dismissed until the next thing starts.
+
 The page has a left menu: **Overview** (the stats below), **Recommended**,
 **Movies**, **TV**, **Rate**, **Data** (backup and import) and
 **Settings** (⚙).
@@ -94,6 +111,18 @@ The page has a left menu: **Overview** (the stats below), **Recommended**,
   rating, films by decade, most replayed, best rated, most watched shows).
 - Every film and show page ends with **Similar films** / **Similar shows**,
   by shared genres with a nudge for a similar era and better rating.
+- Film, show and person pages carry **artwork**: posters, episode stills and
+  cast photographs, all proxied through the addon so the browser never sees
+  a Jellyfin token and a phone that can reach the dashboard can see the
+  pictures even when it cannot reach Jellyfin itself.
+- A film or show page shows its **overview**, and badges for **resolution**
+  (4K, 1080p, 720p, 576p, 480p, judged on width so a scope film is not
+  mislabelled), codec, container, file size, runtime and certificate.
+- **Cast and crew** appear as a strip of faces. Click anyone for their own
+  page: every title of theirs on your server, split into what you have
+  watched and what you have not.
+- A show lists its **episodes as cards** with the still, the description and
+  that episode's own resolution badges, ticked where you have watched it.
 - Every film and show page can **play or queue on the Kodi box** the
   dashboard is served from, so the phone in your hand works as a remote. A
   show's buttons pick its next unwatched episode. Queueing while nothing is

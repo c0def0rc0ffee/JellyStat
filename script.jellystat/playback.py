@@ -214,21 +214,63 @@ def play_show(series_name, action="play"):
     return {"action": "play", "name": chosen["label"]}
 
 
+def _seconds(clock):
+    if not isinstance(clock, dict):
+        return 0
+    return ((clock.get("hours") or 0) * 3600 + (clock.get("minutes") or 0) * 60
+            + (clock.get("seconds") or 0))
+
+
 def status():
-    """What the box is doing now, so the page can say so."""
+    """What the box is doing now, in enough detail to draw the popup.
+
+    Carries position and length so the page can show a progress bar and the
+    clock time it will finish at, which is the thing anyone actually wants
+    to know mid-episode.
+    """
     players = rpc("Player.GetActivePlayers")
     queued = len(rpc("Playlist.GetItems",
                      {"playlistid": VIDEO_PLAYLIST}).get("items") or [])
     if not players:
         return {"playing": False, "queued": queued}
     player_id = players[0]["playerid"]
-    item = rpc("Player.GetItem", {"playerid": player_id,
-                                  "properties": ["title", "season",
-                                                 "episode", "showtitle"]}
-               ).get("item") or {}
-    name = item.get("title") or "something"
-    if item.get("showtitle"):
-        name = "%s S%02dE%02d %s" % (item["showtitle"],
-                                     item.get("season") or 0,
-                                     item.get("episode") or 0, name)
-    return {"playing": True, "now": name, "queued": queued}
+    item = rpc("Player.GetItem", {
+        "playerid": player_id,
+        "properties": ["title", "season", "episode", "showtitle", "file",
+                       "thumbnail", "art", "runtime"],
+    }).get("item") or {}
+    props = rpc("Player.GetProperties", {
+        "playerid": player_id,
+        "properties": ["time", "totaltime", "percentage", "speed"],
+    })
+    position = _seconds(props.get("time"))
+    total = _seconds(props.get("totaltime"))
+    remaining = max(total - position, 0)
+
+    title = item.get("title") or "Something"
+    show = item.get("showtitle") or None
+    label = title
+    code = None
+    if show:
+        code = "S%d \u00b7 E%d" % (item.get("season") or 0,
+                                    item.get("episode") or 0)
+        label = "%s - %s" % (code, title)
+
+    # The Jellyfin id is in the path Jellyfin for Kodi wrote, so the popup
+    # can show real artwork rather than Kodi's cached thumbnail.
+    found = ID_IN_PATH.search(item.get("file") or "")
+    return {
+        "playing": True,
+        "paused": (props.get("speed") or 0) == 0,
+        "now": ("%s %s" % (show, label)) if show else title,
+        "title": title,
+        "show": show,
+        "code": code,
+        "label": label,
+        "item_id": found.group(1).lower() if found else None,
+        "position": position,
+        "total": total,
+        "remaining": remaining,
+        "percent": round(props.get("percentage") or 0.0, 1),
+        "queued": queued,
+    }

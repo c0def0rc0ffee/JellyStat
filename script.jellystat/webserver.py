@@ -28,9 +28,11 @@ import xbmcvfs
 import history
 import importer
 import library
+import media as artwork
 import main as core
 import playback
 import ratings
+import screentime
 import recommend
 import webdata
 
@@ -198,6 +200,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, playback.status())
             except playback.PlaybackError as err:
                 self._send_json(503, {"error": str(err)})
+        elif route.path == "/api/image":
+            self._serve_image(parse_qs(route.query))
+        elif route.path == "/api/person":
+            self._serve_simple(
+                lambda q: artwork.person((q.get("id") or [""])[0]),
+                parse_qs(route.query))
+        elif route.path == "/api/episodes":
+            self._serve_simple(
+                lambda q: artwork.episodes(
+                    (q.get("series") or [""])[0],
+                    (q.get("season") or [None])[0]),
+                parse_qs(route.query))
+        elif route.path == "/api/tiles":
+            self._send_json(200, screentime.tiles())
+        elif route.path == "/api/screentime":
+            try:
+                days = int((parse_qs(route.query).get("days") or ["7"])[0])
+            except ValueError:
+                days = 7
+            self._send_json(200, screentime.screen_time(max(2, min(days, 90))))
         elif route.path == "/api/export":
             self._serve_export()
         else:
@@ -368,6 +390,7 @@ class Handler(BaseHTTPRequestHandler):
                   else library.show_detail(name))
         if detail is not None:
             detail["watched"] = True
+            self._attach_artwork(detail, media)
             self._send_json(200, detail)
             return
         try:
@@ -379,7 +402,25 @@ class Handler(BaseHTTPRequestHandler):
         if detail is None:
             self._send_json(404, {"error": "That title is not on the server."})
             return
+        self._attach_artwork(detail, media)
         self._send_json(200, detail)
+
+    def _attach_artwork(self, detail, media):
+        """Fold live Jellyfin detail into a page payload, never failing it.
+
+        The mirror is the source of truth for what was watched; this adds
+        only what it deliberately does not store - artwork, cast, overview
+        and resolution. A server that is down costs the page its pictures,
+        not its numbers.
+        """
+        item_id = detail.get("id") or detail.get("series_id")
+        detail["media_detail"] = None
+        if not item_id:
+            return
+        try:
+            detail["media_detail"] = artwork.detail(item_id)
+        except Exception as err:
+            log("No live detail for %s: %s" % (item_id, err), xbmc.LOGDEBUG)
 
     def _serve_rate(self):
         """Save one score and report honestly what reached Jellyfin."""
@@ -498,6 +539,54 @@ class Handler(BaseHTTPRequestHandler):
                                            % err})
             return
         self._send_json(200, payload)
+
+    def _serve_simple(self, builder, query):
+        """Run one read-only lookup and answer with it, or with its error."""
+        try:
+            self._send_json(200, builder(query))
+        except artwork.MediaError as err:
+            self._send_json(404, {"error": str(err)})
+        except core.JellyStatError as err:
+            self._send_json(503, {"error": str(err)})
+        except Exception as err:
+            log("Lookup failed: %s" % err, xbmc.LOGERROR)
+            self._send_json(500, {"error": str(err)})
+
+    def _serve_image(self, query):
+        """Proxy one Jellyfin image, so the browser never sees the token.
+
+        Cached hard by the browser as well as in memory: artwork for a given
+        id and size does not change, and a poster grid should not re-fetch
+        on every page view.
+        """
+        item_id = (query.get("id") or [""])[0]
+        kind = (query.get("type") or ["Primary"])[0]
+        try:
+            width = int((query.get("w") or ["400"])[0])
+        except ValueError:
+            width = 400
+        try:
+            content_type, blob = artwork.fetch_image(item_id, kind, width)
+        except artwork.MediaError as err:
+            self._send(404, str(err), "text/plain; charset=utf-8")
+            return
+        except core.JellyStatError as err:
+            self._send(503, str(err), "text/plain; charset=utf-8")
+            return
+        except Exception as err:
+            log("Image fetch failed: %s" % err, xbmc.LOGWARNING)
+            self._send(500, "Could not fetch the image.",
+                       "text/plain; charset=utf-8")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(blob)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        try:
+            self.wfile.write(blob)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _serve_export(self):
         """Download the whole database - mirror, snapshots, play log.

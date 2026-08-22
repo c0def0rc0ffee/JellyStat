@@ -77,6 +77,126 @@ nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
   nav.side button { padding: 8px 12px; }
 }
 
+/* Headline tiles (this month / all time) */
+.tilewrap { display: grid; gap: 14px; grid-template-columns: 1fr 1fr;
+  margin-bottom: 18px; }
+@media (max-width: 780px) { .tilewrap { grid-template-columns: 1fr; } }
+.tileblock { background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px 18px; }
+.tileblock h3 { margin: 0 0 14px; font-size: 13px; font-weight: 600;
+  color: var(--ink-dim); text-transform: uppercase; letter-spacing: .07em; }
+.tilegrid { display: grid; gap: 14px 10px;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+.tile { display: flex; align-items: center; gap: 9px; }
+.tile svg { width: 21px; height: 21px; flex: none; stroke: var(--ink-dim);
+  fill: none; stroke-width: 1.6; stroke-linecap: round;
+  stroke-linejoin: round; }
+.tile .n { font-size: 17px; font-weight: 650; line-height: 1.1;
+  font-variant-numeric: tabular-nums; }
+.tile .l { font-size: 11.5px; color: var(--ink-dim); }
+
+/* Screen time */
+.stgrid { display: grid; gap: 12px; margin-top: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.stcard { background: var(--panel-2); border-radius: 11px; padding: 13px 15px; }
+.stcard .k { font-size: 11.5px; color: var(--ink-dim); margin-bottom: 8px; }
+.stcard .big { font-size: 23px; font-weight: 650; line-height: 1.15;
+  font-variant-numeric: tabular-nums; }
+.delta { font-size: 12px; margin-top: 5px; font-variant-numeric: tabular-nums; }
+.delta.down { color: #ff6b8b; }
+.delta.up { color: #4ad991; }
+.stbars { display: flex; align-items: flex-end; gap: 6px; height: 92px; }
+.stbars .col { flex: 1; display: flex; flex-direction: column;
+  justify-content: flex-end; height: 100%; }
+.stbars .fill { background: var(--accent); border-radius: 4px 4px 0 0;
+  min-height: 3px; }
+.stbars .fill.today { background: var(--panel); border: 1px solid var(--line); }
+.stlabels { display: flex; gap: 6px; margin-top: 6px; font-size: 11px;
+  color: var(--ink-dim); }
+.stlabels div { flex: 1; text-align: center; }
+.partrow { display: grid; grid-template-columns: 74px 1fr 28px; gap: 9px;
+  align-items: center; font-size: 12.5px; margin-bottom: 7px; }
+.partrow .track { background: var(--bg); border-radius: 999px; height: 7px;
+  overflow: hidden; }
+.partrow .fill { height: 100%; background: var(--accent); border-radius: 999px; }
+.partrow .n { text-align: right; color: var(--ink-dim);
+  font-variant-numeric: tabular-nums; }
+
+/* Now playing popup */
+#nowplaying {
+  position: fixed; right: 18px; bottom: 18px; z-index: 60; display: none;
+  width: min(370px, calc(100vw - 36px));
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; padding: 11px; gap: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+}
+#nowplaying.show { display: flex; }
+#nowplaying img { width: 84px; height: 56px; object-fit: cover;
+  border-radius: 8px; flex: none; background: var(--panel-2); }
+#nowplaying .body { flex: 1; min-width: 0; }
+#nowplaying .np { font-size: 11px; color: var(--ink-dim);
+  text-transform: uppercase; letter-spacing: .06em; }
+#nowplaying .ttl { font-size: 14px; font-weight: 600; margin: 2px 0 7px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#nowplaying .bar { background: var(--panel-2); border-radius: 999px;
+  height: 4px; overflow: hidden; margin-bottom: 5px; }
+#nowplaying .bar i { display: block; height: 100%; background: var(--accent); }
+#nowplaying .foot { display: flex; justify-content: space-between;
+  font-size: 11.5px; color: var(--ink-dim); }
+#nowplaying .x { position: absolute; top: 6px; right: 8px; border: 0;
+  background: transparent; color: var(--ink-dim); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 2px 4px; }
+
+/* Posters */
+.poster { background: var(--panel-2); border-radius: 8px; overflow: hidden;
+  aspect-ratio: 2 / 3; width: 100%; display: block; object-fit: cover; }
+.sugg .poster { margin-bottom: 8px; }
+
+/* Cast strip */
+.caststrip { display: grid; gap: 12px; margin-top: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.cast { border: 0; background: transparent; padding: 0; cursor: pointer;
+  text-align: center; color: inherit; }
+.cast img, .cast .noface {
+  width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 9px;
+  background: var(--panel-2); display: block; margin-bottom: 6px;
+}
+.cast .noface { display: flex; align-items: center; justify-content: center;
+  color: var(--ink-dim); font-size: 20px; }
+.cast:hover .who { color: var(--accent); }
+.cast .who { font-size: 12.5px; font-weight: 600; line-height: 1.25; }
+.cast .role { font-size: 11.5px; color: var(--ink-dim); line-height: 1.25; }
+
+/* Item page hero */
+.hero { display: flex; gap: 18px; margin-bottom: 6px; flex-wrap: wrap; }
+.hero .art { width: 150px; flex: none; }
+.hero .art img { width: 100%; border-radius: 11px; display: block; }
+.hero .info { flex: 1; min-width: 240px; }
+.overview { font-size: 14px; line-height: 1.55; margin: 10px 0 0;
+  max-width: 70ch; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.badge { border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px;
+  font-size: 11.5px; color: var(--ink-dim); font-weight: 600;
+  letter-spacing: .02em; }
+.badge.res { color: var(--ink); border-color: var(--accent); }
+.badge.res.uhd { background: var(--accent); border-color: var(--accent);
+  color: #fff; }
+
+/* Episode cards */
+.epcards { display: grid; gap: 12px; grid-template-columns: 1fr; }
+.epcard { display: flex; gap: 12px; background: var(--panel-2);
+  border-radius: 11px; padding: 10px; }
+.epcard img, .epcard .nostill { width: 132px; height: 74px; flex: none;
+  object-fit: cover; border-radius: 8px; background: var(--bg); }
+.epcard .body { flex: 1; min-width: 0; }
+.epcard .h { display: flex; gap: 8px; align-items: baseline;
+  flex-wrap: wrap; }
+.epcard .code { font-size: 12px; color: var(--ink-dim);
+  font-variant-numeric: tabular-nums; }
+.epcard .nm { font-size: 14px; font-weight: 600; }
+.epcard .ov { font-size: 12.5px; color: var(--ink-dim); margin-top: 5px;
+  line-height: 1.45; }
+
 /* Genre filter chips */
 .genrefilter { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .genrefilter button {
@@ -406,6 +526,14 @@ button.danger { color: var(--warn); }
 
     <div id="view-overview">
 
+    <div class="tilewrap" id="tiles"></div>
+
+    <section class="panel">
+      <h2>Screen time</h2>
+      <p class="hint" id="st-window"></p>
+      <div class="stgrid" id="screentime"></div>
+    </section>
+
     <div class="cards" id="cards"></div>
 
     <section class="panel">
@@ -641,6 +769,8 @@ button.danger { color: var(--warn); }
 
   </main>
 </div>
+
+<div id="nowplaying" aria-live="polite"></div>
 
 <script>
 "use strict";
@@ -1349,6 +1479,8 @@ async function load(force) {
     $("dash").style.display = "block";
     renderStamp();
     renderCards();
+    renderTiles();
+    renderScreenTime();
     renderHeatmap();
     renderHours();
     renderWeekdays();
@@ -1643,6 +1775,7 @@ function renderSettings() {
 function applyPrefs() {
   /* Re-render everything that shows a date or time. Cheap: it is all
      client-side formatting of data already in memory. */
+  if (SCREEN) renderScreenTime();
   if (DATA) {
     renderStamp();
     renderHeatmap();
@@ -1805,6 +1938,7 @@ function renderSuggestions(host, payload, emptyText) {
   const grid = el("div", { class: "grid" });
   payload.items.forEach((item) => {
     const card = el("button", { class: "sugg", type: "button" });
+    if (item.id) card.append(art(item.id, "Primary", 240, "poster", item.name));
     card.append(el("div", { class: "t" }, item.name));
     card.append(el("div", { class: "m" },
       [item.year, item.genres.slice(0, 2).join(", "),
@@ -2292,6 +2426,269 @@ function similarPanel(media) {
   return panel;
 }
 
+/* ---------- durations and artwork ---------- */
+
+/* "5d 1h" reads at a glance where "7,321 minutes" does not. */
+function dur(minutes, long) {
+  const m = Math.max(0, Math.round(minutes || 0));
+  if (!m) return "0m";
+  const days = Math.floor(m / 1440);
+  const hours = Math.floor((m % 1440) / 60);
+  const mins = m % 60;
+  if (days) return days + "d " + hours + "h";
+  if (hours) return hours + "h " + (long ? "" : mins + "m");
+  return mins + "m";
+}
+
+function signed(minutes) {
+  const m = Math.round(minutes || 0);
+  return (m > 0 ? "+" : m < 0 ? "-" : "") + dur(Math.abs(m));
+}
+
+function img(id, kind, width) {
+  return "/api/image?id=" + encodeURIComponent(id)
+    + "&type=" + (kind || "Primary") + "&w=" + (width || 300);
+}
+
+/* An <img> that simply disappears if Jellyfin has no such picture, rather
+   than leaving a broken-image glyph in the layout. */
+function art(id, kind, width, className, alt) {
+  const node = el("img", { class: className || "poster", loading: "lazy",
+                           alt: alt || "" });
+  node.src = img(id, kind, width);
+  node.addEventListener("error", () => node.remove());
+  return node;
+}
+
+const ICONS = {
+  episodes: "M2 6h20v12H2zM7 21h10",
+  shows: "M4 8h16v11H4zM8 3l4 4 4-4",
+  movies: "M12 4a8 8 0 100 16 8 8 0 000-16zM9 9h.01M15 9h.01M9 15h.01M15 15h.01",
+  plays: "M6 4l14 8-14 8z",
+  watched: "M12 6v6l4 2M12 3a9 9 0 100 18 9 9 0 000-18z",
+  ratings: "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z",
+};
+
+function icon(name) {
+  const svg = svgEl("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+  svg.append(svgEl("path", { d: ICONS[name] || ICONS.plays }));
+  return svg;
+}
+
+/* ---------- headline tiles ---------- */
+
+let TILES = null;
+
+async function loadTiles() {
+  try {
+    const response = await fetch("/api/tiles", { cache: "no-store" });
+    if (!response.ok) return;
+    TILES = await response.json();
+  } catch (err) { return; }
+  renderTiles();
+}
+
+function renderTiles() {
+  if (!TILES) return;
+  const host = $("tiles");
+  host.textContent = "";
+  [["This month", TILES.this_month], ["All time", TILES.all_time]]
+    .forEach(([heading, data]) => {
+      const block = el("div", { class: "tileblock" });
+      block.append(el("h3", {}, heading));
+      const grid = el("div", { class: "tilegrid" });
+      [["episodes", num(data.episodes), "Episodes"],
+       ["shows", num(data.shows), "Shows"],
+       ["movies", num(data.movies), "Movies"],
+       ["plays", num(data.plays), "Plays"],
+       ["watched", dur(data.minutes), "Watched"],
+       ["ratings", num(data.ratings), "Ratings"]].forEach(([key, value, label]) => {
+        const tile = el("div", { class: "tile" });
+        const text = el("div");
+        text.append(el("div", { class: "n" }, value),
+                    el("div", { class: "l" }, label));
+        tile.append(icon(key), text);
+        grid.append(tile);
+      });
+      block.append(grid);
+      host.append(block);
+    });
+}
+
+/* ---------- screen time ---------- */
+
+let SCREEN = null;
+
+async function loadScreenTime() {
+  try {
+    const response = await fetch("/api/screentime?days=7",
+                                 { cache: "no-store" });
+    if (!response.ok) return;
+    SCREEN = await response.json();
+  } catch (err) { return; }
+  renderScreenTime();
+}
+
+function deltaLine(value, formatter) {
+  if (!value) return null;
+  const node = el("div", { class: "delta " + (value > 0 ? "up" : "down") },
+                  (value > 0 ? "+" : "") + formatter(value));
+  return node;
+}
+
+function stCard(label, big, delta, formatter) {
+  const card = el("div", { class: "stcard" });
+  card.append(el("div", { class: "k" }, label),
+              el("div", { class: "big" }, big));
+  const line = deltaLine(delta, formatter);
+  if (line) card.append(line);
+  return card;
+}
+
+function renderScreenTime() {
+  if (!SCREEN) return;
+  const host = $("screentime");
+  host.textContent = "";
+  $("st-window").textContent = SCREEN.measured
+    ? ("Measured from the play log, " + fmtDay(SCREEN.from) + " to "
+       + fmtDay(SCREEN.to) + ". Comparisons are against the previous "
+       + SCREEN.days + " days."
+       + (SCREEN.covered_from
+          ? " The log starts " + fmtDay(SCREEN.covered_from) + "." : ""))
+    : "Nothing logged yet. Screen time is measured from real sittings, so it "
+      + "fills in as you watch with this version installed.";
+
+  /* Daily bars */
+  const daily = el("div", { class: "stcard" });
+  daily.append(el("div", { class: "k" }, "Daily breakdown"));
+  const peak = Math.max(1, ...SCREEN.breakdown.map((d) => d.minutes));
+  daily.append(el("div", { class: "big" },
+                  dur(SCREEN.breakdown.reduce((a, d) => a + d.minutes, 0))));
+  const bars = el("div", { class: "stbars" });
+  SCREEN.breakdown.forEach((day) => {
+    const col = el("div", { class: "col",
+                            title: fmtDay(day.date) + ": " + dur(day.minutes) });
+    const fill = el("div", { class: "fill" + (day.today ? " today" : "") });
+    fill.style.height = Math.max(3, 100 * day.minutes / peak) + "%";
+    col.append(fill);
+    bars.append(col);
+  });
+  daily.append(bars);
+  const labels = el("div", { class: "stlabels" });
+  SCREEN.breakdown.forEach((day) => {
+    labels.append(el("div", {}, day.today ? "Today"
+                                          : DAY_NAMES[day.weekday]));
+  });
+  daily.append(labels);
+  host.append(daily);
+
+  host.append(stCard("Daily average", dur(SCREEN.daily_average.minutes),
+                     SCREEN.daily_average.delta, (v) => dur(Math.abs(v))));
+
+  /* Peak hours */
+  const parts = el("div", { class: "stcard" });
+  parts.append(el("div", { class: "k" }, "Peak hours"));
+  const maxPart = Math.max(1, ...SCREEN.dayparts.map((p) => p.sessions));
+  SCREEN.dayparts.forEach((part) => {
+    const row = el("div", { class: "partrow" });
+    const track = el("div", { class: "track" });
+    const fill = el("div", { class: "fill" });
+    fill.style.width = (100 * part.sessions / maxPart) + "%";
+    track.append(fill);
+    row.append(el("div", {}, part.name), track,
+               el("div", { class: "n" }, String(part.sessions)));
+    parts.append(row);
+  });
+  host.append(parts);
+
+  host.append(stCard("Total", dur(SCREEN.total.minutes), SCREEN.total.delta,
+                     (v) => dur(Math.abs(v))));
+  host.append(stCard("Waking hours", SCREEN.waking.percent + "%",
+                     SCREEN.waking.delta, (v) => Math.abs(v) + "%"));
+  host.append(stCard("Movies", dur(SCREEN.movies.minutes),
+                     SCREEN.movies.delta, (v) => dur(Math.abs(v))));
+  host.append(stCard("Shows", dur(SCREEN.shows.minutes), SCREEN.shows.delta,
+                     (v) => dur(Math.abs(v))));
+}
+
+/* ---------- now playing ---------- */
+
+let npTimer = null;
+let npDismissed = null;
+
+function endsAt(secondsLeft) {
+  const when = new Date(Date.now() + secondsLeft * 1000);
+  const h = when.getHours();
+  const m = String(when.getMinutes()).padStart(2, "0");
+  if (PREFS.clock === "h12") {
+    return (h % 12 || 12) + ":" + m + (h < 12 ? " am" : " pm");
+  }
+  return String(h).padStart(2, "0") + ":" + m;
+}
+
+function renderNowPlaying(state) {
+  const box = $("nowplaying");
+  if (!state || !state.playing || npDismissed === state.item_id) {
+    box.className = "";
+    box.textContent = "";
+    return;
+  }
+  box.textContent = "";
+  if (state.item_id) {
+    box.append(art(state.item_id, "Primary", 200, "", state.title));
+  }
+  const body = el("div", { class: "body" });
+  body.append(el("div", { class: "np" },
+                 state.paused ? "Paused" : "Now playing"));
+  const title = el("div", { class: "ttl" });
+  if (state.show) {
+    title.textContent = state.show + " " + state.label;
+  } else {
+    title.textContent = state.title;
+  }
+  body.append(title);
+  const bar = el("div", { class: "bar" });
+  const fill = el("i");
+  fill.style.width = Math.max(0, Math.min(state.percent, 100)) + "%";
+  bar.append(fill);
+  body.append(bar);
+  const foot = el("div", { class: "foot" });
+  const left = Math.round(state.remaining / 60);
+  foot.append(el("span", {}, left ? left + "m left" : "finishing"),
+              el("span", {}, state.remaining
+                 ? "Ends at " + endsAt(state.remaining) : ""));
+  body.append(foot);
+  box.append(body);
+
+  const close = el("button", { class: "x", type: "button",
+                               title: "Hide until the next thing plays" }, "\u00d7");
+  close.addEventListener("click", () => {
+    npDismissed = state.item_id || "dismissed";
+    renderNowPlaying(null);
+  });
+  box.append(close);
+  box.className = "show";
+}
+
+async function pollNowPlaying() {
+  try {
+    const response = await fetch("/api/playback", { cache: "no-store" });
+    if (response.ok) {
+      const state = await response.json();
+      if (!state.playing) npDismissed = null;   /* next item shows again */
+      renderNowPlaying(state);
+    }
+  } catch (err) {
+    /* The box may be off; the popup simply stays hidden. */
+  }
+}
+
+function startNowPlaying() {
+  if (npTimer) clearInterval(npTimer);
+  pollNowPlaying();
+  npTimer = setInterval(pollNowPlaying, 15000);
+}
+
 /* ---------- views ---------- */
 
 const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
@@ -2498,6 +2895,175 @@ function playBar(ref) {
   return bar;
 }
 
+/* Resolution, codec and container as small badges. The resolution is the
+   one people scan for, so it is the only coloured one, and 4K gets a solid
+   fill because that is the distinction actually worth spotting. */
+function mediaBadges(detail) {
+  const box = el("div", { class: "badges" });
+  const info = detail.media;
+  if (info && info.label) {
+    const badge = el("span", {
+      class: "badge res" + (info.lines >= 2160 ? " uhd" : ""),
+      title: info.width && info.height
+        ? info.width + " x " + info.height : info.label,
+    }, info.label);
+    box.append(badge);
+  }
+  if (info && info.codec) box.append(el("span", { class: "badge" },
+                                        info.codec));
+  if (info && info.range && info.range !== "SDR") {
+    box.append(el("span", { class: "badge" }, info.range));
+  }
+  if (info && info.container) box.append(el("span", { class: "badge" },
+                                            info.container));
+  if (info && info.size_gb) box.append(el("span", { class: "badge" },
+                                          info.size_gb + " GB"));
+  if (detail.runtime_minutes) {
+    box.append(el("span", { class: "badge" }, dur(detail.runtime_minutes)));
+  }
+  if (detail.official_rating) {
+    box.append(el("span", { class: "badge" }, detail.official_rating));
+  }
+  return box;
+}
+
+/* Cast, each face a link to that person's own page. */
+function castPanel(detail) {
+  const panel = el("section", { class: "panel" });
+  const people = (detail && detail.people) || [];
+  panel.append(el("h2", {}, "Cast and crew"));
+  if (!people.length) {
+    panel.append(el("p", { class: "empty" },
+      "Jellyfin has no cast listed for this title."));
+    return panel;
+  }
+  panel.append(el("p", { class: "hint" },
+    "Click anyone to see only their titles on your server."));
+  const strip = el("div", { class: "caststrip" });
+  people.forEach((person) => {
+    const card = el("button", { class: "cast", type: "button",
+                                title: "See " + person.name + "'s titles" });
+    if (person.image) {
+      card.append(art(person.id, "Primary", 200, "", person.name));
+    } else {
+      card.append(el("div", { class: "noface" }, "\u2014"));
+    }
+    card.append(el("div", { class: "who" }, person.name));
+    card.append(el("div", { class: "role" },
+                   person.role || person.type));
+    card.addEventListener("click", () => openPerson(person.id, person.name));
+    strip.append(card);
+  });
+  panel.append(strip);
+  return panel;
+}
+
+/* ---------- person page ---------- */
+
+async function openPerson(id, fallbackName) {
+  const host = itemShell();
+  host.append(el("p", { class: "empty" }, "Loading…"));
+  let data;
+  try {
+    const response = await fetch("/api/person?id=" + encodeURIComponent(id),
+                                 { cache: "no-store" });
+    data = await response.json();
+    if (!response.ok) throw new Error(data.error || response.status);
+  } catch (err) {
+    host.lastChild.textContent = "Could not load this person: " + err.message;
+    return;
+  }
+  host.lastChild.remove();
+
+  const hero = el("div", { class: "hero" });
+  const artBox = el("div", { class: "art" });
+  artBox.append(art(id, "Primary", 400, "", data.name));
+  hero.append(artBox);
+  const info = el("div", { class: "info" });
+  const head = el("div", { class: "itemhead" });
+  head.append(el("h2", {}, data.name || fallbackName || "Unknown"));
+  info.append(head);
+  info.append(factsRow([
+    [num(data.total), "titles on your server"],
+    [num(data.watched.length), "you have watched"],
+    [num(data.unwatched.length), "you have not"],
+  ]));
+  hero.append(info);
+  host.append(hero);
+
+  [["Watched", data.watched], ["Not watched yet", data.unwatched]]
+    .forEach(([heading, list]) => {
+      if (!list.length) return;
+      const panel = el("section", { class: "panel" });
+      panel.append(el("h2", {}, heading + " (" + list.length + ")"));
+      const grid = el("div", { class: "grid" });
+      list.forEach((title) => {
+        const card = el("button", { class: "sugg", type: "button" });
+        card.append(art(title.id, "Primary", 240, "poster", title.name));
+        card.append(el("div", { class: "t" }, title.name));
+        card.append(el("div", { class: "m" },
+          [title.year, title.genres.slice(0, 2).join(", "),
+           title.rating ? "★ " + title.rating.toFixed(1) : null]
+            .filter(Boolean).join(" · ")));
+        card.addEventListener("click", () => {
+          if (title.type === "show") openShow(title.name);
+          else openMovie(title.id);
+        });
+        grid.append(card);
+      });
+      panel.append(grid);
+      host.append(panel);
+    });
+}
+
+/* ---------- episode cards ---------- */
+
+function episodePanel(seriesId) {
+  const panel = el("section", { class: "panel" });
+  panel.append(el("h2", {}, "Episodes"));
+  const note = el("p", { class: "hint" }, "Loading episodes…");
+  panel.append(note);
+  const cards = el("div", { class: "epcards" });
+  panel.append(cards);
+  fillEpisodes(seriesId, note, cards);
+  return panel;
+}
+
+async function fillEpisodes(seriesId, note, cards) {
+  try {
+    const response = await fetch("/api/episodes?series="
+      + encodeURIComponent(seriesId), { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || response.status);
+    note.textContent = data.episodes.length + " episodes on the server, "
+      + "newest season last. A tick means you have watched it.";
+    data.episodes.forEach((ep) => {
+      const card = el("div", { class: "epcard" });
+      if (ep.has_image) {
+        card.append(art(ep.id, "Primary", 300, "", ep.name));
+      } else {
+        card.append(el("div", { class: "nostill" }));
+      }
+      const body = el("div", { class: "body" });
+      const line = el("div", { class: "h" });
+      line.append(el("span", { class: "code" },
+                     "S" + String(ep.season || 0).padStart(2, "0")
+                     + "E" + String(ep.episode || 0).padStart(2, "0")));
+      line.append(el("span", { class: "nm" }, ep.name || "?"));
+      if (ep.watched) line.append(el("span", { class: "seen" }, "✓ watched"));
+      body.append(line);
+      body.append(mediaBadges(ep));
+      if (ep.overview) {
+        body.append(el("div", { class: "ov" }, ep.overview));
+      }
+      card.append(body);
+      cards.append(card);
+    });
+  } catch (err) {
+    note.textContent = "Could not load episodes: " + err.message;
+  }
+}
+
 function notWatchedNote(kind) {
   const panel = el("section", { class: "panel" });
   panel.append(el("h2", {}, "Not watched yet"));
@@ -2552,13 +3118,30 @@ async function openMovie(id) {
   }
   host.lastChild.remove();
 
+  const detail = movie.media_detail || {};
+  const hero = el("div", { class: "hero" });
+  if (movie.id && detail.has_primary !== false) {
+    const artBox = el("div", { class: "art" });
+    artBox.append(art(movie.id, "Primary", 400, "", movie.name));
+    hero.append(artBox);
+  }
+  const info = el("div", { class: "info" });
   const head = el("div", { class: "itemhead" });
   head.append(el("h2", {}, movie.name));
   if (movie.year) head.append(el("span", { class: "year" },
                                  String(movie.year)));
   if (movie.favourite) head.append(el("span", {}, "♥"));
-  host.append(head);
-  host.append(tags(movie.genres));
+  info.append(head);
+  info.append(tags(movie.genres));
+  info.append(mediaBadges(detail));
+  if (detail.tagline) {
+    info.append(el("p", { class: "overview" }, detail.tagline));
+  }
+  if (detail.overview) {
+    info.append(el("p", { class: "overview" }, detail.overview));
+  }
+  hero.append(info);
+  host.append(hero);
   host.append(factsRow([
     [movie.rating ? "★ " + movie.rating.toFixed(1) : null, "community"],
     [movie.critic ? movie.critic + "%" : null, "critics"],
@@ -2572,6 +3155,7 @@ async function openMovie(id) {
   ]));
   host.append(playBar({ id: movie.id }));
   if (!movie.watched) host.append(notWatchedNote("film"));
+  host.append(castPanel(detail));
   if (movie.watched) host.append(sittingsPanel(movie.sittings));
   host.append(similarPanel("movies"));
   CURRENT_ITEM = { media: "movies", id: movie.id, name: movie.name };
@@ -2593,10 +3177,25 @@ async function openShow(name) {
   }
   host.lastChild.remove();
 
+  const detail = show.media_detail || {};
+  const hero = el("div", { class: "hero" });
+  const artId = show.series_id || show.id;
+  if (artId) {
+    const artBox = el("div", { class: "art" });
+    artBox.append(art(artId, "Primary", 400, "", show.name));
+    hero.append(artBox);
+  }
+  const info = el("div", { class: "info" });
   const head = el("div", { class: "itemhead" });
   head.append(el("h2", {}, show.name));
-  host.append(head);
-  host.append(tags(show.genres));
+  info.append(head);
+  info.append(tags(show.genres));
+  info.append(mediaBadges(detail));
+  if (detail.overview) {
+    info.append(el("p", { class: "overview" }, detail.overview));
+  }
+  hero.append(info);
+  host.append(hero);
   if (!show.watched) {
     host.append(factsRow([
       [show.rating ? "★ " + show.rating.toFixed(1) : null, "community"],
@@ -2639,8 +3238,11 @@ async function openShow(name) {
   seasons.append(bars);
   host.append(seasons);
 
+  host.append(castPanel(detail));
+  if (show.series_id) host.append(episodePanel(show.series_id));
+
   const eps = el("section", { class: "panel" });
-  eps.append(el("h2", {}, "Watched episodes"));
+  eps.append(el("h2", {}, "Your watch history"));
   eps.append(el("p", { class: "hint" }, "Most recently watched first"
     + (show.episodes_watched > show.episodes.length
        ? " — showing the latest " + show.episodes.length : "") + "."));
@@ -2663,6 +3265,9 @@ async function openShow(name) {
 
 $("refresh").addEventListener("click", () => load(true));
 load(false);
+loadTiles();
+loadScreenTime();
+startNowPlaying();
 loadBatches();
 </script>
 </body>
