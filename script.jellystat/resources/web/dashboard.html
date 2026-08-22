@@ -1303,9 +1303,12 @@ function table(columns, rows) {
   return node;
 }
 
-function tags(list) {
+/* Genre chips. Table rows keep the two-chip cap so they stay one line;
+   item pages pass a high limit, because a film's own page cutting its
+   genre list short is how Terminator 2 ended up "not science fiction". */
+function tags(list, limit) {
   const span = el("span");
-  (list || []).slice(0, 2).forEach((name) =>
+  (list || []).slice(0, limit || 2).forEach((name) =>
     span.append(el("span", { class: "tag" }, name)));
   return span;
 }
@@ -3145,7 +3148,7 @@ async function openMovie(id) {
                                  String(movie.year)));
   if (movie.favourite) head.append(el("span", {}, "♥"));
   info.append(head);
-  info.append(tags(movie.genres));
+  info.append(tags(movie.genres, 99));
   info.append(mediaBadges(detail));
   if (detail.tagline) {
     info.append(el("p", { class: "overview" }, detail.tagline));
@@ -3202,7 +3205,7 @@ async function openShow(name) {
   const head = el("div", { class: "itemhead" });
   head.append(el("h2", {}, show.name));
   info.append(head);
-  info.append(tags(show.genres));
+  info.append(tags(show.genres, 99));
   info.append(mediaBadges(detail));
   if (detail.overview) {
     info.append(el("p", { class: "overview" }, detail.overview));
