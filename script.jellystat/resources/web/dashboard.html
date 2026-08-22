@@ -2053,7 +2053,7 @@ function renderPager(media, payload) {
   host.append(el("span", { class: "range" },
                  "Showing " + num(from) + "–" + num(to) + " of " + num(total)
                  + (state.genres.length
-                    ? " in " + state.genres.join(", ") : "")));
+                    ? " that are " + state.genres.join(" and ") : "")));
 
   const back = el("button", { type: "button" }, "‹ Back");
   back.disabled = payload.offset <= 0;
@@ -2094,7 +2094,7 @@ async function loadRecs(media) {
     payload.media = media;
     renderGenreFilter(media, payload);
     renderSuggestions(host, payload, state.genres.length
-      ? "Nothing recommendable in " + state.genres.join(" or ")
+      ? "Nothing is both " + state.genres.join(" and ")
         + " with the current setting."
       : "Nothing to suggest yet — watch a few more titles so there is a "
         + "taste profile to match against.");

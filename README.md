@@ -101,8 +101,9 @@ The page has a left menu: **Overview** (the stats below), **Recommended**,
   by how much of your viewing falls in its genres, times its rating. Nothing
   leaves the box and no external service is consulted. Clicking any
   suggestion opens its page, watched or not. Each section has a **genre
-  filter** (tick any number of genres, each showing how many titles it would
-  leave) and **Back** / **Forward** buttons to page through the whole ranked
+  filter** (tick any number of genres; a title must carry **every** genre ticked, and
+  each chip shows how many titles would be left if you added it, so the
+  filter never leads to a dead end) and **Back** / **Forward** buttons to page through the whole ranked
   list, with a running "showing 21 to 40 of 6,170". Filtering narrows the
   list without re-ranking it, so picking Horror answers "the horror you
   would most likely enjoy" rather than "your favourites that happen to be
@@ -375,7 +376,11 @@ applies:
 - **Genres** are alias-merged ("Sci-Fi" → "Science Fiction" etc.), movies
   with **no genre are reported as "Unknown"**, and a multi-genre movie counts
   **once per genre**, so genre counts can sum to more than `total` (which is
-  distinct movies). Lists are sorted descending by count.
+  distinct movies). Lists are sorted descending by count. From v0.15.0 this
+  applies to science fiction too: it previously swallowed a title's other
+  genres, so a science fiction action film counted only as science fiction.
+  Fantasy is likewise its own genre again rather than being folded into
+  science fiction.
 - Each genre entry carries both `count` and `percent` (share of the window's
   movies with that genre, 1 decimal), so the site can display either without
   computing anything.

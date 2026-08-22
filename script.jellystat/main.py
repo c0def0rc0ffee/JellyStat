@@ -197,8 +197,8 @@ GENRE_ALIASES = {
     "scifi": "Science Fiction",
     "science-fiction": "Science Fiction",
     "science fiction": "Science Fiction",
-    # Fantasy, and TMDb's combined TV genre, are treated as sci-fi here
-    "fantasy": "Science Fiction",
+    # Fantasy is its own genre. TMDb's *combined* TV genre has no way to be
+    # split, so it lands on Science Fiction rather than being dropped.
     "sci-fi & fantasy": "Science Fiction",
     "sci fi & fantasy": "Science Fiction",
     "science fiction & fantasy": "Science Fiction",
@@ -216,10 +216,19 @@ def canonical_genre(name):
 
 
 def effective_genres(item, genre_lookup=None):
-    """An item's genres after aliasing, dedup and the sci-fi dominance rule.
+    """An item's genres, aliased and deduped.
 
-    Sci-fi dominates: if Science Fiction is among the (aliased) genres, it
-    is the item's ONLY genre - the item never counts towards the others.
+    Every genre a title carries counts, so a science fiction horror film is
+    both. Counts across genres therefore sum to more than the number of
+    titles, which is why the genre views offer a "primary only" mode when a
+    breakdown that adds up to 100% is what is wanted.
+
+    (Until v0.15.0 a "sci-fi dominance" rule collapsed anything science
+    fiction down to that single genre. It suppressed 1,771 genre tags on a
+    2,200 film library - 524 films stopped being Action - while every other
+    multi-genre title still counted in each of its genres, so it bought no
+    consistency. Primary-only does that job properly.)
+
     No genres at all -> ["Unknown"]. For episodes pass genre_lookup
     (series id -> genres); episodes carry no genres of their own.
     """
@@ -234,8 +243,6 @@ def effective_genres(item, genre_lookup=None):
         if canon.lower() not in seen:
             seen.add(canon.lower())
             genres.append(canon)
-    if "science fiction" in seen:
-        return ["Science Fiction"]
     return genres or ["Unknown"]
 
 

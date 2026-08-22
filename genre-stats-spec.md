@@ -64,13 +64,19 @@ Each window object:
 Rules the site must NOT re-derive:
 
 - **Watched** = Jellyfin's Played flag (~90% completion by default).
-- **Sci-fi dominance:** any item whose aliased genres include Science
-  Fiction counts **only** as Science Fiction, never towards its other
-  genres, in every view (`genres`, `genres_by_plays`, `genres_primary`)
-  and in the addon's on-screen stats.
-- **Other multi-genre items count once per every genre they have**, so
+- **Multi-genre items count once per every genre they have**, so
   `sum(counts) ≥ total` and percentages can sum past 100. `total` is always
-  distinct items, never a sum of the genre list.
+  distinct items, never a sum of the genre list. Use `genres_primary` for a
+  view that adds up to 100.
+- **Changed in addon v0.15.0:** a "sci-fi dominance" rule used to make any
+  item whose aliased genres included Science Fiction count **only** as
+  Science Fiction. It is gone: such items now count towards each of their
+  genres like everything else. Sites holding history from both sides of
+  that change will see Science Fiction fall and Action, Adventure and
+  Horror rise at the changeover, with no change to `total`.
+- **Changed in addon v0.15.0:** Fantasy is no longer aliased to Science
+  Fiction and appears as its own genre. TMDb's combined "Sci-Fi & Fantasy"
+  TV genre, which cannot be split, still maps to Science Fiction.
 - A window with nothing watched sends
   `"total": 0, "per_day": 0.0, "avg_gap_minutes": null, "genres": []`.
 - TV counts are per **episode**, not per show; a 10-episode binge of a Drama

@@ -150,11 +150,13 @@ def recommendations(media, include_seen, limit=RECOMMEND_LIMIT, offset=0,
                     genres=None):
     """Ranked suggestions for 'movies' or 'tv'.
 
-    `genres` narrows the result to titles carrying at least one of the named
-    genres (case-insensitive, aliased the same way as everything else). It
-    filters rather than re-ranks: the order still reflects overall taste, so
-    picking "Horror" answers "the horror you would most likely enjoy", not
-    "your favourite films that happen to be horror".
+    `genres` narrows the result to titles carrying **every** named genre,
+    not merely one of them: picking science fiction and action asks for
+    films that are both, which is what choosing two things means.
+
+    It filters rather than re-ranks: the order still reflects overall taste,
+    so picking "Horror" answers "the horror you would most likely enjoy",
+    not "your favourite films that happen to be horror".
 
     `offset` pages through the full ranked list. The counts returned describe
     the list after filtering, so the page can say 21-40 of 137 honestly.
@@ -193,8 +195,17 @@ def recommendations(media, include_seen, limit=RECOMMEND_LIMIT, offset=0,
                                    -(entry["rating"] or 0),
                                    entry["name"]))
 
-    # The genre list offered by the page comes from what is actually
-    # recommendable, so it never presents a filter that yields nothing.
+    wanted = {name.strip().lower() for name in (genres or []) if name.strip()}
+    if wanted:
+        # Subset, not intersection: every chosen genre has to be present.
+        scored = [entry for entry in scored
+                  if wanted <= {g.lower() for g in entry["genres"]}]
+
+    # Counted after filtering, so each chip says how many titles would be
+    # left if it were added to the current selection. A genre that would
+    # empty the list simply is not offered, so the filter has no dead ends.
+    # An already-chosen genre is carried by every remaining title, so it
+    # shows the full count and can always be unticked.
     tally = {}
     for entry in scored:
         for genre in entry["genres"]:
@@ -202,11 +213,6 @@ def recommendations(media, include_seen, limit=RECOMMEND_LIMIT, offset=0,
     available = [{"genre": genre, "count": count}
                  for genre, count in sorted(tally.items(),
                                             key=lambda kv: (-kv[1], kv[0]))]
-
-    wanted = {name.strip().lower() for name in (genres or []) if name.strip()}
-    if wanted:
-        scored = [entry for entry in scored
-                  if wanted & {g.lower() for g in entry["genres"]}]
 
     offset = max(0, int(offset or 0))
     return {

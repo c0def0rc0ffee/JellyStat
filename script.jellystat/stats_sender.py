@@ -13,6 +13,8 @@ Rules this producer settles so the site never interprets:
 - Genres are alias-merged (Sci-Fi -> Science Fiction etc.), movies with no
   genre are reported as "Unknown", and a multi-genre movie counts once per
   genre - so genre counts can sum to more than `total` (distinct movies).
+  Since v0.15.0 that applies to science fiction too: it used to swallow a
+  title's other genres, and no longer does.
 - Genre lists sorted descending by count, ties alphabetical.
 """
 
@@ -31,8 +33,8 @@ import main as core
 
 ADDON_ID = "script.jellystat"
 
-# Genre aliasing and the sci-fi dominance rule live in main.py so the
-# on-screen stats and the website payload always agree.
+# Genre aliasing lives in main.py so the on-screen stats and the website
+# payload always agree.
 GENRE_ALIASES = core.GENRE_ALIASES
 canonical_genre = core.canonical_genre
 
@@ -64,8 +66,8 @@ def _genre_tally(items, genre_lookup=None, use_plays=False,
       count; percent base is total plays.
     - primary_only: only the item's FIRST listed genre counts, so each item
       counts exactly once and percentages sum to ~100.
-    Genres come from core.effective_genres: aliased, deduped, and sci-fi
-    dominant (a Science Fiction item counts ONLY as Science Fiction).
+    Genres come from core.effective_genres: aliased and deduped, with every
+    genre a title carries counting.
     Sorted descending by the metric, ties alphabetical.
     """
     counts = {}
