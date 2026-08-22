@@ -3789,7 +3789,9 @@ function libHint(media, payload) {
                 num(counts.unwatched) + " not watched",
                 num(counts.unrated) + " not rated by you"];
   if (counts.duplicates) {
-    bits.push(num(counts.duplicates) + " held more than once");
+    bits.push(num(counts.duplicates) + " " + (media === "tv" ? "shows" : "films")
+              + " held more than once, as " + num(counts.duplicate_entries)
+              + " entries");
   }
   return bits.join(" · ")
     + (payload.offline ? " — Jellyfin is unreachable, so only titles you "
@@ -3882,7 +3884,17 @@ function renderLibGenres(media, payload) {
 
 function renderLibList(media, payload) {
   const host = $(libPrefix(media));
+  const counts = payload.counts || {};
   host.textContent = "";
+  if (payload.show === "duplicates" && counts.duplicates) {
+    /* The tab counts films, this list shows entries, and without a word of
+       explanation the two look like a bug. */
+    host.append(el("p", { class: "hint" },
+      num(counts.duplicates) + " " + (media === "tv" ? "shows" : "films")
+      + " appear more than once, listed here as all "
+      + num(counts.duplicate_entries) + " entries so the copies can be "
+      + "compared. Open one to see where each file is and how big it is."));
+  }
   if (!payload.items.length) {
     host.append(el("p", { class: "empty" },
       "Nothing here with those filters."));

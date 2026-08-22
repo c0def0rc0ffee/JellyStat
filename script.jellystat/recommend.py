@@ -593,7 +593,16 @@ def browse(media, limit=48, offset=0, genres=None, exclude=None,
             "rated": sum(1 for r in rows if r["user_rating"] is not None),
             "unrated": sum(1 for r in rows if r["user_rating"] is None),
             "favourites": sum(1 for r in rows if r["favourite"]),
-            "duplicates": sum(1 for r in rows if r["copies"] > 1),
+            # Titles, not entries. Twelve films held twice is twelve
+            # duplicates and twenty-four rows, and calling that "24
+            # duplicates" reads as twice as bad a problem as it is - the
+            # count has to answer "how many films is this", because that is
+            # what somebody is going to go and fix.
+            "duplicates": len({library.dupe_key(r["name"], r["year"])
+                               for r in rows if r["copies"] > 1}),
+            # The rows the duplicates view will actually show: every copy,
+            # because comparing them is the whole point of looking.
+            "duplicate_entries": sum(1 for r in rows if r["copies"] > 1),
         },
         "genres_available": [{"genre": g, "count": c} for g, c in
                              sorted(tally.items(),
