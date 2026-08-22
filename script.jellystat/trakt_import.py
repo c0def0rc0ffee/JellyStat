@@ -14,11 +14,16 @@ So it runs in three steps:
 3. `commit()` writes only those, with a database snapshot taken
    immediately before and immediately after (see backup.py).
 
-Conflicts go to Trakt. That is the user's standing decision and it is not
-inferred here: `RATING_POLICY` names it, so changing it is one edit rather
-than an archaeology exercise.
+What happens where the two sides already disagree is **chosen, not assumed**.
+`MODES` below names each choice, says in plain words what it does to data
+that is already here, and maps to an actual code path rather than a label:
+there is no mode that only sounds different from another. stage() costs out
+every one of them against the real numbers, so the choice is made while
+looking at what it would do rather than after.
 """
 
+import csv
+import io
 import json
 import secrets
 import time
@@ -33,9 +38,6 @@ import trakt
 
 STAGE_TTL_S = 1800
 
-# Where a rating exists in both places and they disagree.
-RATING_POLICY = "trakt-wins"
-
 # Imported ratings stay in JellyStat and are not pushed to Jellyfin.
 PUSH_RATINGS = False
 
@@ -44,6 +46,60 @@ PUSH_RATINGS = False
 DEDUP_HOURS = 12
 
 CATEGORIES = ("history", "ratings-movie", "ratings-episode", "ratings-show")
+
+# How an import treats what is already here. Two independent decisions -
+# what to do about a play that looks already logged, and what to do about a
+# rating that disagrees - offered as named combinations rather than as two
+# more questions to answer.
+#
+#   plays_skip_duplicates  a Trakt play within DEDUP_HOURS of a sitting
+#                          already logged is the same event seen twice
+#   ratings                only-new  leave every rating already here alone
+#                          newer     take Trakt's only when it is the later
+#                                    of the two
+#                          overwrite take Trakt's wherever they disagree
+MODES = {
+    "missing": {
+        "label": "Add what is missing",
+        "badge": "SAFE",
+        "blurb": "Brings over only what JellyStat does not already hold. "
+                 "Nothing here is changed or removed: a play that looks "
+                 "like one already logged is left out, and a title you have "
+                 "already rated keeps your score even where Trakt disagrees.",
+        "plays_skip_duplicates": True,
+        "ratings": "only-new",
+    },
+    "newer": {
+        "label": "Take Trakt's only where it is newer",
+        "badge": "SMART",
+        "blurb": "Adds everything missing, and where a rating exists in both "
+                 "places takes Trakt's only if you rated it there more "
+                 "recently than here. A score you changed in JellyStat since "
+                 "stays.",
+        "plays_skip_duplicates": True,
+        "ratings": "newer",
+    },
+    "trakt-wins": {
+        "label": "Let Trakt win",
+        "badge": "RECOMMENDED",
+        "blurb": "Adds everything missing and settles every disagreement in "
+                 "Trakt's favour, so the two hold the same scores "
+                 "afterwards. Repeat plays are still skipped.",
+        "plays_skip_duplicates": True,
+        "ratings": "overwrite",
+    },
+    "everything": {
+        "label": "Everything, including repeat plays",
+        "badge": "ADVANCED",
+        "blurb": "As above, but keeps plays that look like sittings already "
+                 "logged rather than dropping them. For when Trakt holds "
+                 "rewatches this box recorded once \u2014 it will double up "
+                 "anything that really was the same viewing.",
+        "plays_skip_duplicates": False,
+        "ratings": "overwrite",
+    },
+}
+DEFAULT_MODE = "trakt-wins"
 
 _staged = {}
 
@@ -75,31 +131,56 @@ def _existing_play_keys(connection):
     return keys
 
 
+def _when(value):
+    """A comparable timestamp.
+
+    Ratings written here carry a T between date and time, ones carried over
+    from Trakt carry a space, and "2020-01-01T09:00" sorts before
+    "2020-01-01 09:00" for no reason anybody meant. Comparing these as
+    strings without flattening that is the kind of bug that silently keeps
+    the wrong score.
+    """
+    return (value or "").replace("T", " ")
+
+
 def _rating_report(connection, ratings):
-    """What the chosen ratings would do: new, unchanged, or overwritten."""
+    """What these ratings would do: new, unchanged, or a disagreement.
+
+    Disagreements are split by which side is the more recent, because that
+    is the whole difference between the "newer" mode and the "overwrite"
+    one and it cannot be worked out later - the local timestamp is gone the
+    moment the first write lands.
+    """
     current = {}
-    for item_id, score in connection.execute(
-            "SELECT id, user_rating FROM items WHERE user_rating IS NOT NULL"):
-        current[item_id] = score
-    fresh = same = changed = unmatched = 0
+    for item_id, score, at in connection.execute(
+            "SELECT id, user_rating, user_rating_at FROM items "
+            "WHERE user_rating IS NOT NULL"):
+        current[item_id] = (score, at)
+    fresh = same = changed = trakt_newer = unmatched = 0
     examples = []
     for row in ratings:
         item_id = row.get("item_id")
         if not item_id:
             unmatched += 1
             continue
-        existing = current.get(item_id)
-        if existing is None:
+        held = current.get(item_id)
+        if held is None:
             fresh += 1
-        elif abs(float(existing) - row["rating"]) < 0.001:
+            continue
+        existing, held_at = held
+        if abs(float(existing) - row["rating"]) < 0.001:
             same += 1
-        else:
-            changed += 1
-            if len(examples) < 8:
-                examples.append({"title": row["title"],
-                                 "from": existing, "to": row["rating"]})
+            continue
+        changed += 1
+        newer = _when(row.get("rated_at")) > _when(held_at)
+        if newer:
+            trakt_newer += 1
+        if len(examples) < 8:
+            examples.append({"title": row["title"], "from": existing,
+                             "to": row["rating"], "trakt_newer": newer})
     return {"new": fresh, "unchanged": same, "overwritten": changed,
-            "unmatched": unmatched, "examples": examples}
+            "trakt_newer": trakt_newer, "unmatched": unmatched,
+            "examples": examples}
 
 
 def stage(envelope, progress=None):
@@ -166,11 +247,7 @@ def stage(envelope, progress=None):
     token = secrets.token_hex(16)
     _staged[token] = {"at": time.time(), "history": history,
                       "ratings": ratings}
-    return {
-        "token": token,
-        "policy": {"conflicts": RATING_POLICY, "push_to_jellyfin":
-                   PUSH_RATINGS, "durations": "assumed from runtime"},
-        "categories": {
+    categories = {
             "history": {
                 "label": "Watch history",
                 "records": len(history),
@@ -191,8 +268,118 @@ def stage(envelope, progress=None):
                                     records=len(by_kind["episode"])),
             "ratings-show": dict(reports["show"], label="Show ratings",
                                  records=len(by_kind["show"])),
-        },
     }
+    return {
+        "token": token,
+        "policy": {"push_to_jellyfin": PUSH_RATINGS,
+                   "durations": "assumed from runtime"},
+        "unmatched": len(history) - matched
+                     + sum(c.get("unmatched", 0) for c in categories.values()),
+        "modes": _cost_modes(categories),
+        "default_mode": DEFAULT_MODE,
+        "categories": categories,
+    }
+
+
+def _cost_modes(categories):
+    """What each mode would do to this particular export.
+
+    A named choice with no numbers beside it is still a guess. Every card
+    the page draws carries the count it would actually write, worked out
+    here from the same report the categories are drawn from rather than
+    estimated in the browser.
+    """
+    history = categories.get("history") or {}
+    rated = [categories[k] for k in
+             ("ratings-movie", "ratings-episode", "ratings-show")
+             if categories.get(k)]
+    out = []
+    for key, mode in MODES.items():
+        plays = (history.get("would_add", 0)
+                 if mode["plays_skip_duplicates"]
+                 else history.get("records", 0))
+        if mode["ratings"] == "only-new":
+            written = sum(c.get("new", 0) for c in rated)
+            changed = 0
+        elif mode["ratings"] == "newer":
+            written = sum(c.get("new", 0) + c.get("trakt_newer", 0)
+                          for c in rated)
+            changed = sum(c.get("trakt_newer", 0) for c in rated)
+        else:
+            written = sum(c.get("new", 0) + c.get("overwritten", 0)
+                          for c in rated)
+            changed = sum(c.get("overwritten", 0) for c in rated)
+        out.append({
+            "key": key,
+            "label": mode["label"],
+            "badge": mode["badge"],
+            "blurb": mode["blurb"],
+            "plays": plays,
+            "ratings": written,
+            # The number worth seeing before pressing anything: how much of
+            # what is already here would stop being what it is.
+            "overwrites": changed,
+            "kept": sum(c.get("overwritten", 0) for c in rated) - changed,
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# What could not be matched
+# ---------------------------------------------------------------------------
+
+def _unmatched_rows(staged, chosen):
+    """Every row that found no title in this library, as plain fields.
+
+    A count of what did not match tells you the import was imperfect and
+    nothing else. The rows tell you it was three anime specials Trakt
+    numbers differently, which is something a person can act on - so they
+    are handed over rather than summarised away.
+    """
+    rows = []
+    if "history" in chosen:
+        for session in staged["history"]:
+            if session.get("item_id"):
+                continue
+            rows.append({"kind": "watch", "title": session["title"],
+                         "show": session.get("show") or "",
+                         "season": session.get("season") or "",
+                         "episode": session.get("episode") or "",
+                         "year": session.get("year") or "",
+                         "when": session.get("started_at") or "",
+                         "detail": ""})
+    for kind in ("movie", "episode", "show"):
+        if "ratings-" + kind not in chosen:
+            continue
+        for row in staged["ratings"]:
+            if row["kind"] != kind or row.get("item_id"):
+                continue
+            rows.append({"kind": kind + " rating", "title": row["title"],
+                         "show": row.get("show") or "",
+                         "season": row.get("season") or "",
+                         "episode": row.get("episode") or "",
+                         "year": row.get("year") or "",
+                         "when": row.get("rated_at") or "",
+                         "detail": "rated %s" % row["rating"]})
+    return rows
+
+
+def unmatched_csv(token):
+    """The unmatched rows of a staged or just-finished import, as CSV."""
+    _prune()
+    staged = _staged.get(token)
+    if not staged:
+        raise TraktImportError("That import is no longer held in memory.")
+    rows = _unmatched_rows(staged, list(CATEGORIES))
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["Type", "Title", "Show", "Season", "Episode", "Year",
+                     "When", "Detail"])
+    for row in rows:
+        writer.writerow([row["kind"], row["title"], row["show"],
+                         row["season"], row["episode"], row["year"],
+                         row["when"], row["detail"]])
+    return out.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -224,35 +411,70 @@ def _insert_history(connection, sessions, batch_id, skip_duplicates=True):
     return added, skipped
 
 
-def _apply_ratings(connection, rows, stamp):
-    """Write chosen ratings. Trakt wins where the two disagree."""
-    written = skipped = 0
+def _apply_ratings(connection, rows, stamp, policy):
+    """Write chosen ratings under the mode's rule for disagreements.
+
+    Returns (written, skipped, kept) - kept being the scores this box was
+    already holding that the chosen mode deliberately left alone, which is
+    the number the result screen reports back.
+    """
+    held = {}
+    for item_id, score, at in connection.execute(
+            "SELECT id, user_rating, user_rating_at FROM items "
+            "WHERE user_rating IS NOT NULL"):
+        held[item_id] = (score, at)
+    written = skipped = kept = 0
     for row in rows:
-        if not row.get("item_id"):
+        item_id = row.get("item_id")
+        if not item_id:
             skipped += 1
             continue
+        current = held.get(item_id)
+        if current is not None:
+            score, at = current
+            # Checked before the policy, not inside it: a score that already
+            # agrees is nothing to write under any mode, and counting it as
+            # written would make the result disagree with the number the
+            # card promised.
+            if abs(float(score) - row["rating"]) < 0.001:
+                kept += 1
+                continue
+            if policy == "only-new" or (
+                    policy == "newer"
+                    and not _when(row.get("rated_at")) > _when(at)):
+                kept += 1
+                continue
         connection.execute(
             "UPDATE items SET user_rating = ?, user_rating_at = ?, "
             "rating_sync = 'from trakt' WHERE id = ?",
-            (row["rating"], row.get("rated_at") or stamp, row["item_id"]))
+            (row["rating"], row.get("rated_at") or stamp, item_id))
         written += 1
-    return written, skipped
+    return written, skipped, kept
 
 
-def commit(token, categories, skip_duplicates=True):
-    """Import the chosen categories, with a snapshot either side."""
+def commit(token, categories, mode=DEFAULT_MODE):
+    """Import the chosen categories under a mode, snapshot either side."""
     _prune()
     staged = _staged.get(token)
     if not staged:
         raise TraktImportError(
             "That import expired before it was confirmed. Load the files "
             "again; nothing was written.")
+    if staged.get("done"):
+        raise TraktImportError(
+            "That import has already been run. Fetch from Trakt again to "
+            "import anything further; nothing was written twice.")
     chosen = [c for c in (categories or []) if c in CATEGORIES]
     if not chosen:
-        raise TraktImportError("No categories were ticked, so there was "
-                               "nothing to import.")
+        raise TraktImportError("Nothing was chosen, so there was nothing "
+                               "to import.")
+    rule = MODES.get(mode)
+    if rule is None:
+        raise TraktImportError("Unknown import mode %r." % mode)
+    skip_duplicates = rule["plays_skip_duplicates"]
 
-    result = {"categories": chosen, "history": None, "ratings": {}}
+    result = {"categories": chosen, "mode": mode, "mode_label": rule["label"],
+              "history": None, "ratings": {}}
     with backup.around("trakt-import") as snapshots:
         connection = library.connect()
         playlog.connect().close()          # ensure the plays schema exists
@@ -280,12 +502,18 @@ def commit(token, categories, skip_duplicates=True):
                         continue
                     rows = [r for r in staged["ratings"]
                             if r["kind"] == kind]
-                    written, skipped = _apply_ratings(connection, rows, stamp)
+                    written, skipped, kept = _apply_ratings(
+                        connection, rows, stamp, rule["ratings"])
                     result["ratings"][key] = {"written": written,
-                                              "skipped": skipped}
+                                              "skipped": skipped,
+                                              "kept": kept}
         finally:
             connection.close()
     result["backups"] = snapshots
-    del _staged[token]
+    result["unmatched"] = _unmatched_rows(staged, chosen)
+    # Kept rather than dropped: the result screen offers the rows that found
+    # no home as a file, and it can only do that while they still exist.
+    # _prune clears them on the same timer as any other staged import.
+    staged["done"] = True
     log("Trakt import finished: %s" % json.dumps(result))
     return result

@@ -226,6 +226,8 @@ class Handler(BaseHTTPRequestHandler):
                     (q.get("series") or [""])[0],
                     (q.get("season") or [None])[0]),
                 parse_qs(route.query))
+        elif route.path == "/api/trakt/unmatched":
+            self._serve_trakt_unmatched(parse_qs(route.query))
         elif route.path == "/api/trakt/authorize":
             self._serve_trakt_authorize()
         elif route.path == "/api/trakt/status":
@@ -752,6 +754,17 @@ class Handler(BaseHTTPRequestHandler):
                     xbmc.LOGWARNING)
         self._redirect("/")
 
+    def _serve_trakt_unmatched(self, query):
+        """The rows an import could not place, as a file to work through."""
+        try:
+            body = trakt_import.unmatched_csv((query.get("token") or [""])[0])
+        except trakt_import.TraktImportError as err:
+            self._send_json(404, {"error": str(err)})
+            return
+        self._send(200, body, "text/csv; charset=utf-8",
+                   [("Content-Disposition",
+                     'attachment; filename="trakt-unmatched.csv"')])
+
     def _serve_trakt_fetch(self):
         """Pull everything from Trakt and stage it, exactly as a file would.
 
@@ -801,7 +814,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self._send_json(200, trakt_import.commit(
                 body.get("token"), body.get("categories"),
-                body.get("skip_duplicates", True)))
+                body.get("mode") or trakt_import.DEFAULT_MODE))
         except trakt_import.TraktImportError as err:
             self._send_json(400, {"error": str(err)})
         except Exception as err:

@@ -268,6 +268,49 @@ nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
 .cat .warn { color: var(--warn); }
 .cat .n { font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums;
   min-width: 74px; text-align: right; }
+/* Import modes. Same card as .cat, but each one is a button rather than a
+   tick: choosing the mode and starting the import are one action, so there
+   is never a chosen-but-not-started state to explain. */
+.modelist { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+.mode { display: flex; gap: 14px; align-items: flex-start;
+  background: var(--panel-2); border-radius: 11px; padding: 14px 16px;
+  border: 1px solid transparent; }
+.mode.pick { border-color: var(--accent); }
+.mode .body { flex: 1; min-width: 0; }
+.mode .nm { font-size: 14px; font-weight: 600; display: flex; gap: 9px;
+  align-items: center; flex-wrap: wrap; }
+.mode .sub { font-size: 12.5px; color: var(--ink-dim); margin-top: 5px;
+  line-height: 1.5; }
+.mode .cost { font-size: 12.5px; margin-top: 7px; display: flex; gap: 14px;
+  flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.mode .cost b { font-weight: 650; }
+.mode .cost .risk { color: var(--warn); }
+.mode .go { flex: none; align-self: center; }
+.badge { font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+  border-radius: 999px; padding: 2px 8px; background: var(--panel);
+  border: 1px solid var(--line); color: var(--ink-dim); }
+.badge.rec { background: var(--accent); border-color: var(--accent);
+  color: #fff; }
+.badge.safe { color: var(--episode); border-color: var(--episode); }
+.badge.adv { color: var(--warn); border-color: var(--warn); }
+
+/* Running, and what came of it. */
+h3.steph { font-size: 14.5px; margin: 22px 0 6px;
+  padding-top: 18px; border-top: 1px solid var(--line); }
+.working { display: flex; gap: 13px; align-items: center; padding: 18px 4px; }
+.working .sub { font-size: 12.5px; color: var(--ink-dim); margin-top: 3px; }
+.spinner { width: 21px; height: 21px; flex: none; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.outcome { background: var(--panel-2); border-radius: 11px; padding: 16px 18px;
+  margin: 14px 0; }
+.outcome .big { font-size: 25px; font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.outcome .lede { font-size: 13.5px; color: var(--ink-dim); margin-top: 2px; }
+.outcome .facts { margin: 12px 0 0; }
+
 .eg { font-size: 12px; color: var(--ink-dim); margin-top: 6px;
   font-variant-numeric: tabular-nums; }
 .eg b { color: var(--ink); font-weight: 600; }
@@ -823,11 +866,11 @@ button.danger { color: var(--warn); }
 
     <section class="panel">
       <h2>Import from a Trakt export file</h2>
-      <p class="hint">Select a whole Trakt export folder. The files are read
-        here in the browser, matched against your library, and nothing is
-        written until you have seen what was found and ticked what to
-        import. A backup of the database is taken automatically immediately
-        before and immediately after.</p>
+      <p class="hint">No Trakt connection needed. Select a whole Trakt export
+        folder; the files are read here in the browser and matched against
+        your library. It lands in the same place as importing over the
+        connection above — you see what was found, choose how it should meet
+        what you already have, and nothing is written until you do.</p>
       <div class="filerow">
         <input type="file" id="traktfiles" multiple accept=".json">
         <button class="action" id="traktstage">Read the export</button>
@@ -3356,12 +3399,12 @@ function catLine(key, cat) {
       parts.push(num(cat.unmatched) + " not on your server (imported anyway)");
     }
     if (cat.duplicates) {
-      parts.push(num(cat.duplicates) + " already logged, skipped");
+      parts.push(num(cat.duplicates) + " look already logged");
     }
     return parts.join(" · ");
   }
   const parts = [num(cat.new) + " new"];
-  if (cat.overwritten) parts.push(num(cat.overwritten) + " overwritten");
+  if (cat.overwritten) parts.push(num(cat.overwritten) + " disagree with yours");
   if (cat.unchanged) parts.push(num(cat.unchanged) + " already the same");
   if (cat.unmatched) parts.push(num(cat.unmatched) + " not in your library");
   return parts.join(" · ");
@@ -3372,6 +3415,8 @@ function renderTraktReport() {
   host.textContent = "";
   if (!TRAKT) return;
 
+  /* Step one: what is in the export. Read-only - it says what was found,
+     it asks nothing. */
   const list = el("div", { class: "catlist" });
   const order = ["history", "ratings-movie", "ratings-episode",
                  "ratings-show"];
@@ -3384,6 +3429,7 @@ function renderTraktReport() {
     box.dataset.key = key;
     box.addEventListener("change", () => {
       row.classList.toggle("on", box.checked);
+      renderModes();
     });
     const body = el("div", { class: "body" });
     body.append(el("div", { class: "nm" }, cat.label));
@@ -3397,7 +3443,7 @@ function renderTraktReport() {
     }
     if (cat.examples && cat.examples.length) {
       const eg = el("div", { class: "eg" });
-      eg.append(document.createTextNode("Trakt wins, e.g. "));
+      eg.append(document.createTextNode("Disagrees, e.g. "));
       cat.examples.slice(0, 3).forEach((x, i) => {
         if (i) eg.append(document.createTextNode(", "));
         eg.append(el("b", {}, x.title));
@@ -3405,10 +3451,10 @@ function renderTraktReport() {
       });
       body.append(eg);
     }
-    row.append(box, body,
-               el("div", { class: "n" }, num(cat.records)));
+    row.append(box, body, el("div", { class: "n" }, num(cat.records)));
     list.append(row);
   });
+  host.append(el("p", { class: "hint" }, "Found in your Trakt data:"));
   host.append(list);
 
   if (TRAKT.skipped_files) {
@@ -3416,58 +3462,195 @@ function renderTraktReport() {
       TRAKT.skipped_files + " other files in the export were not history or "
       + "ratings and were ignored."));
   }
-  host.append(el("p", { class: "hint" },
-    "Where a rating exists in both places and they disagree, "
-    + "Trakt wins. Imported ratings stay in JellyStat and are not written "
-    + "back to Jellyfin."));
 
-  const row = el("div", { class: "filerow" });
-  const go = el("button", { class: "action", type: "button" },
-                "Back up and import the ticked parts");
-  const say = el("span", { class: "say" });
-  go.addEventListener("click", () => runTraktImport(go, say));
-  row.append(go, say);
-  host.append(row);
+  /* Step two: how it should meet what is already here. */
+  host.append(el("h3", { class: "steph" }, "How should it be imported?"));
+  host.append(el("p", { class: "hint" },
+    "Every option adds what JellyStat is missing. They differ only in what "
+    + "they do to what it already holds \u2014 the counts below are for your "
+    + "data, not examples. A backup is taken either side whichever you pick, "
+    + "and imported ratings stay in JellyStat rather than being written to "
+    + "Jellyfin."));
+  host.append(el("div", { class: "modelist", id: "modelist" }));
+  renderModes();
+  host.append(el("div", { id: "traktoutcome" }));
 }
 
-async function runTraktImport(button, say) {
-  const chosen = [...document.querySelectorAll("#traktreport input:checked")]
+/* The mode cards. Redrawn when a category is unticked, because that changes
+   what each mode would actually write and a stale number here is worse than
+   no number at all. */
+function renderModes() {
+  const host = $("modelist");
+  if (!host || !TRAKT) return;
+  host.textContent = "";
+  const chosen = pickedCategories();
+  const wantsHistory = chosen.includes("history");
+  const wantsRatings = chosen.some((k) => k.startsWith("ratings-"));
+
+  (TRAKT.modes || []).forEach((mode) => {
+    const card = el("div", { class: "mode"
+      + (mode.key === TRAKT.default_mode ? " pick" : "") });
+    const body = el("div", { class: "body" });
+    const name = el("div", { class: "nm" });
+    name.append(document.createTextNode(mode.label));
+    name.append(el("span", { class: "badge " + badgeClass(mode.badge) },
+                    mode.badge));
+    body.append(name);
+    body.append(el("div", { class: "sub" }, mode.blurb));
+
+    const cost = el("div", { class: "cost" });
+    if (wantsHistory) {
+      cost.append(spanBits(num(mode.plays), "plays added"));
+    }
+    if (wantsRatings) {
+      cost.append(spanBits(num(mode.ratings), "ratings written"));
+      const over = el("span", { class: mode.overwrites ? "risk" : "" });
+      over.append(el("b", {}, num(mode.overwrites)),
+                  document.createTextNode(" of your scores replaced"));
+      cost.append(over);
+      if (mode.kept) {
+        cost.append(spanBits(num(mode.kept), "of yours kept"));
+      }
+    }
+    body.append(cost);
+
+    const go = el("button", { class: "action primary go", type: "button" },
+                   "Start import");
+    go.addEventListener("click", () => runTraktImport(mode, go));
+    card.append(body, go);
+    host.append(card);
+  });
+}
+
+function spanBits(value, label) {
+  const span = el("span");
+  span.append(el("b", {}, value), document.createTextNode(" " + label));
+  return span;
+}
+
+function badgeClass(badge) {
+  if (badge === "RECOMMENDED") return "rec";
+  if (badge === "SAFE") return "safe";
+  if (badge === "ADVANCED") return "adv";
+  return "";
+}
+
+function pickedCategories() {
+  return [...document.querySelectorAll("#traktreport .cat input:checked")]
     .map((box) => box.dataset.key);
+}
+
+async function runTraktImport(mode, button) {
+  const chosen = pickedCategories();
+  const outcome = $("traktoutcome");
   if (!chosen.length) {
-    say.textContent = "Nothing is ticked.";
+    outcome.textContent = "";
+    outcome.append(el("p", { class: "empty" },
+      "Nothing is ticked above, so there is nothing to import."));
     return;
   }
-  button.disabled = true;
-  button.textContent = "Backing up and importing…";
-  say.textContent = "";
+  /* One import at a time, and no doubt about which card was pressed. */
+  document.querySelectorAll("#modelist button").forEach((b) => {
+    b.disabled = true;
+  });
+  button.textContent = "Importing…";
+  outcome.textContent = "";
+  const working = el("div", { class: "working" });
+  working.append(el("div", { class: "spinner" }));
+  const said = el("div");
+  said.append(el("div", {}, "Importing from Trakt"));
+  said.append(el("div", { class: "sub" },
+    "Backing up first, then importing as \u201c" + mode.label
+    + "\u201d. This usually takes a few moments."));
+  working.append(said);
+  outcome.append(working);
+  outcome.scrollIntoView({ behavior: "smooth", block: "center" });
+
   try {
     const response = await fetch("/api/trakt/commit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: TRAKT.token, categories: chosen }),
+      body: JSON.stringify({ token: TRAKT.token, categories: chosen,
+                             mode: mode.key }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || response.status);
-    const bits = [];
-    if (result.history) bits.push(num(result.history.added) + " plays");
-    Object.keys(result.ratings || {}).forEach((key) => {
-      bits.push(num(result.ratings[key].written) + " "
-        + key.replace("ratings-", "") + " ratings");
-    });
-    say.textContent = "Imported " + bits.join(", ")
-      + ". Backups taken either side.";
+    renderTraktOutcome(result, TRAKT.token);
     TRAKT = null;
-    button.textContent = "Imported";
     loadBackups();
     load(true);
     loadTiles();
     loadScreenTime();
   } catch (err) {
-    say.textContent = "Import failed: " + err.message
-      + " — your backup is in the list below.";
-    button.disabled = false;
-    button.textContent = "Back up and import the ticked parts";
+    outcome.textContent = "";
+    outcome.append(el("p", { class: "empty" },
+      "The import failed: " + err.message
+      + " — your backup is in the list below."));
+    document.querySelectorAll("#modelist button").forEach((b) => {
+      b.disabled = false;
+      b.textContent = "Start import";
+    });
     loadBackups();
+  }
+}
+
+/* What actually happened, in the numbers a person would check. */
+function renderTraktOutcome(result, token) {
+  const host = $("traktoutcome");
+  host.textContent = "";
+  $("modelist").textContent = "";
+
+  const plays = (result.history || {}).added || 0;
+  const written = Object.keys(result.ratings || {})
+    .reduce((sum, key) => sum + (result.ratings[key].written || 0), 0);
+  const kept = Object.keys(result.ratings || {})
+    .reduce((sum, key) => sum + (result.ratings[key].kept || 0), 0);
+  const skippedPlays = (result.history || {}).skipped || 0;
+
+  const box = el("div", { class: "outcome" });
+  box.append(el("div", { class: "big" },
+    num(plays + written) + " imported"));
+  box.append(el("div", { class: "lede" },
+    "Imported as \u201c" + result.mode_label + "\u201d."));
+
+  const facts = el("div", { class: "facts" });
+  if (result.history) {
+    facts.append(spanBits(num(plays), "plays added"));
+    if (skippedPlays) {
+      facts.append(spanBits(num(skippedPlays),
+        "already logged, so left out"));
+    }
+  }
+  if (written || kept) {
+    facts.append(spanBits(num(written), "ratings written"));
+    if (kept) facts.append(spanBits(num(kept), "of your scores kept"));
+  }
+  box.append(facts);
+  host.append(box);
+
+  const unmatched = (result.unmatched || []).length;
+  if (unmatched) {
+    host.append(el("p", { class: "hint" },
+      num(unmatched) + " row" + (unmatched === 1 ? "" : "s")
+      + " could not be matched to anything in your library, so "
+      + (unmatched === 1 ? "it was" : "they were") + " left out. Usually "
+      + "these are episodes Trakt numbers differently from your server \u2014 "
+      + "specials counted into a season, or a show split into parts. The "
+      + "list names each one so you can look them up."));
+    const link = el("a", { class: "action",
+                           href: "/api/trakt/unmatched?token="
+                                 + encodeURIComponent(token),
+                           download: "trakt-unmatched.csv" },
+                     "Download the list (.csv)");
+    const row = el("div", { class: "filerow" });
+    row.append(link);
+    host.append(row);
+  }
+
+  if ((result.backups || []).length) {
+    host.append(el("p", { class: "hint" },
+      "Backups were taken either side and are in the list below; nothing "
+      + "here has to be undone by hand."));
   }
 }
 
