@@ -166,15 +166,3 @@ msgstr ""
 msgctxt "#32064"
 msgid "A 9 or 10 also marks the item a favourite on Jellyfin"
 msgstr ""
-
-msgctxt "#32060"
-msgid "Trakt (create an app at trakt.tv/oauth/applications)"
-msgstr ""
-
-msgctxt "#32061"
-msgid "Trakt Client ID"
-msgstr ""
-
-msgctxt "#32062"
-msgid "Trakt Client Secret"
-msgstr ""

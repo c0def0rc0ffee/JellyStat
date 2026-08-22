@@ -35,7 +35,6 @@ import playback
 import ratings
 import reconcile
 import screentime
-import trakt_api
 import trakt_import
 import recommend
 import webdata
@@ -218,11 +217,6 @@ class Handler(BaseHTTPRequestHandler):
                 parse_qs(route.query))
         elif route.path == "/api/trakt/unmatched":
             self._serve_trakt_unmatched(parse_qs(route.query))
-        elif route.path == "/api/trakt/status":
-            try:
-                self._send_json(200, trakt_api.status())
-            except Exception as err:
-                self._send_json(500, {"error": str(err)})
         elif route.path == "/api/reconcile":
             try:
                 self._send_json(200, reconcile.survey())
@@ -290,27 +284,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/trakt/commit":
             self._serve_trakt_commit()
-            return
-        if path == "/api/trakt/connect":
-            try:
-                self._send_json(200, trakt_api.begin())
-            except trakt_api.TraktApiError as err:
-                self._send_json(400, {"error": str(err)})
-            return
-        if path == "/api/trakt/settings":
-            body = self._json_body()
-            try:
-                self._send_json(200, trakt_api.set_client(
-                    body.get("client_id"), body.get("client_secret")))
-            except trakt_api.TraktApiError as err:
-                self._send_json(400, {"error": str(err)})
-            return
-        if path == "/api/trakt/disconnect":
-            trakt_api.forget()
-            self._send_json(200, trakt_api.status())
-            return
-        if path == "/api/trakt/fetch":
-            self._serve_trakt_fetch()
             return
         if path == "/api/reconcile/start":
             body = self._json_body()
@@ -703,27 +676,6 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, body, "text/csv; charset=utf-8",
                    [("Content-Disposition",
                      'attachment; filename="trakt-unmatched.csv"')])
-
-    def _serve_trakt_fetch(self):
-        """Pull everything from Trakt and stage it, exactly as a file would.
-
-        The API returns the same JSON the export files contain, so the
-        fetched data goes through the identical parse, match and staging
-        path; only its arrival is different.
-        """
-        try:
-            envelope = trakt_api.fetch_all()
-            self._send_json(200, trakt_import.stage(envelope))
-        except trakt_api.TraktApiError as err:
-            self._send_json(400, {"error": str(err)})
-        except trakt_import.TraktImportError as err:
-            self._send_json(400, {"error": str(err)})
-        except core.JellyStatError as err:
-            self._send_json(503, {"error": str(err)})
-        except Exception as err:
-            log("Trakt fetch failed: %s" % err, xbmc.LOGERROR)
-            self._send_json(500, {"error": "Could not fetch from Trakt: %s"
-                                           % err})
 
     def _serve_trakt_stage(self):
         """Parse an uploaded Trakt export and report what it holds."""

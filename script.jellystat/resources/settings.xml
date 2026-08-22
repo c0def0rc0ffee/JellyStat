@@ -162,29 +162,6 @@
           <control type="toggle"/>
         </setting>
       </group>
-      <group id="3" label="32060">
-        <setting id="trakt_client_id" type="string" label="32061">
-          <level>0</level>
-          <default></default>
-          <constraints>
-            <allowempty>true</allowempty>
-          </constraints>
-          <control type="edit" format="string">
-            <heading>32061</heading>
-          </control>
-        </setting>
-        <setting id="trakt_client_secret" type="string" label="32062">
-          <level>0</level>
-          <default></default>
-          <constraints>
-            <allowempty>true</allowempty>
-          </constraints>
-          <control type="edit" format="string">
-            <heading>32062</heading>
-            <hidden>true</hidden>
-          </control>
-        </setting>
-      </group>
       <group id="4" label="32047">
         <setting id="history_enabled" type="boolean" label="32048">
           <level>0</level>
