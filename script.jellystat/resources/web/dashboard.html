@@ -248,6 +248,8 @@ nav.side .navgap { height: 10px; border-bottom: 1px solid var(--line);
   color: var(--ink); font-family: inherit; }
 .credfield:focus-visible { outline: 2px solid var(--accent);
   outline-offset: 1px; }
+.altrow { margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--line); }
 .credrow .say { font-size: 12.5px; color: var(--ink-dim); }
 .credrow .say.bad { color: var(--warn); }
 
@@ -452,6 +454,13 @@ button.action {
 }
 button.action:hover { background: var(--panel-2); }
 button.action[disabled] { opacity: .5; cursor: default; }
+/* The one thing a panel is for, when everything else in it is a detail. */
+button.action.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  font-weight: 600; padding: 9px 20px;
+}
+button.action.primary:hover { filter: brightness(1.1);
+  background: var(--accent); }
 a.action {
   display: inline-block; border: 1px solid var(--line); background: var(--panel);
   color: var(--ink); border-radius: 999px; padding: 7px 15px; font-size: 13px;
@@ -804,12 +813,11 @@ button.danger { color: var(--warn); }
 
     <section class="panel">
       <h2>Connect to Trakt</h2>
-      <p class="hint">Sign in once and JellyStat can pull your history and
-        ratings straight from Trakt, with no export file. Trakt issues
-        credentials per application rather than per person, so you register
-        one of your own at <b>trakt.tv/oauth/applications</b> and set it up
-        below — all of it from here, with a keyboard, rather than on the
-        television. Everything you paste stays on this box.</p>
+      <p class="hint">Sign in once and JellyStat pulls your watch history and
+        ratings straight from Trakt, with no export file. Setting up takes a
+        one-off registration on Trakt&#39;s side; it is all under the settings
+        below, done from here with a keyboard rather than on the
+        television.</p>
       <div id="traktconn"></div>
     </section>
 
@@ -3040,73 +3048,45 @@ function renderConnection() {
   const box = el("div", { class: "conn" });
   box.append(el("span", { class: "dotbig" + (CONN.connected ? " on" : "") }));
   const who = el("div", { class: "who" });
+  const device = CONN.device || {};
+  const waiting = !CONN.connected && device.state === "waiting";
+
   if (CONN.connected) {
     who.append(el("div", {}, "Connected" + (CONN.username
       ? " as " + CONN.username : "")));
     who.append(el("div", { class: "sub" }, CONN.connected_at
       ? "Signed in " + fmtStamp(CONN.connected_at) : ""));
-  } else if (!CONN.configured) {
-    who.append(el("div", {}, "Not set up"));
-    who.append(el("div", { class: "sub" },
-      "Paste the Trakt application's Client ID and Secret below."));
+  } else if (waiting) {
+    who.append(el("div", {}, "Waiting for Trakt"));
+    who.append(el("div", { class: "sub" }, device.flow === "device"
+      ? "Enter the code below on any device."
+      : "Approve the sign-in in the tab that opened."));
   } else {
     who.append(el("div", {}, "Not connected"));
     who.append(el("div", { class: "sub" },
-      "Sign in once to pull your history and ratings directly."));
+      "Sign in once and your history and ratings come straight from Trakt."));
   }
   box.append(who);
 
+  /* One button, and it says what happens next: connect, then import. The
+     credentials, the code fallback and disconnecting are all real but none
+     of them is what someone came to this panel to do, so they wait under
+     the details below. */
+  const say = el("span", { class: "say" });
   if (CONN.connected) {
-    const fetchBtn = el("button", { class: "action", type: "button" },
-                        "Fetch everything from Trakt");
-    const say = el("span", { class: "say" });
-    fetchBtn.addEventListener("click", () => fetchFromTrakt(fetchBtn, say));
-    const off = el("button", { class: "action", type: "button" },
-                   "Disconnect");
-    off.addEventListener("click", async () => {
-      await fetch("/api/trakt/disconnect", { method: "POST" });
-      loadConnection();
-    });
-    box.append(fetchBtn, off, say);
-  } else if (CONN.configured) {
-    /* A plain navigation, not fetch: the server answers with a redirect to
-       Trakt, and the whole point is that the browser follows it. */
-    const go = el("button", { class: "action", type: "button" },
-                  "Sign in to Trakt");
-    go.addEventListener("click", () => {
-      window.location.href = "/api/trakt/authorize";
-    });
-    /* The fallback, for when this dashboard's address cannot be registered
-       with Trakt - it moves, or is reached through something that rewrites
-       it. Trakt reads a typed code from anywhere. */
-    const viaCode = el("button", { class: "action", type: "button" },
-                        "Use a code instead");
-    viaCode.addEventListener("click", async () => {
-      viaCode.disabled = true;
-      try {
-        const response = await fetch("/api/trakt/connect", { method: "POST" });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || response.status);
-        CONN = data;
-        renderConnection();
-        watchConnection();
-      } catch (err) {
-        host.append(el("p", { class: "empty" }, err.message));
-      } finally { viaCode.disabled = false; }
-    });
-    box.append(go, viaCode);
+    const go = el("button", { class: "action primary", type: "button" },
+                   "Import from Trakt");
+    go.addEventListener("click", () => fetchFromTrakt(go, say));
+    box.append(go, say);
+  } else {
+    const go = el("button", { class: "action primary", type: "button" },
+                   waiting ? "Connect again" : "Connect to Trakt");
+    go.addEventListener("click", () => connectToTrakt());
+    box.append(go);
   }
   host.append(box);
 
-  const device = CONN.device || {};
-  if (!CONN.connected && device.state === "waiting"
-      && device.flow === "redirect") {
-    host.append(el("p", { class: "hint" },
-      "Waiting for Trakt. If nothing happened, the application may not "
-      + "list this dashboard's address as a redirect URI - add it and try "
-      + "again."));
-  }
-  if (!CONN.connected && device.state === "waiting" && device.code) {
+  if (waiting && device.code) {
     const steps = el("div");
     steps.append(el("p", { class: "hint" },
       "On any device, open " + (device.url || "trakt.tv/activate")
@@ -3123,37 +3103,45 @@ function renderConnection() {
     host.append(el("p", { class: "empty" }, device.message));
   }
 
-  host.append(renderTraktCreds());
+  host.append(renderTraktSetup());
 }
 
-/* The Trakt application's own credentials.
+/* The one button. Sending someone to Trakt before the application exists
+   would land them on an error page there, so an unconfigured addon opens
+   the setup instead of leaving. */
+function connectToTrakt() {
+  if (!CONN.configured) {
+    CREDNOTE = { text: "Add the application's Client ID and Secret first.",
+                 bad: true };
+    renderConnection();
+    $("traktsetup").scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  /* A plain navigation, not fetch: the server answers with a redirect to
+     Trakt, and the whole point is that the browser follows it. */
+  window.location.href = "/api/trakt/authorize";
+}
 
-   These belong to an application you register, not to your Trakt account,
-   and they have to be entered somewhere. Kodi's settings screen means
-   spelling out a 64-character secret on a remote control, so the same two
-   fields are offered here, where there is a keyboard. They are written to
-   the addon's settings exactly as if they had been typed there. */
-function renderTraktCreds() {
-  const wrap = el("details", { class: "creds" });
-  /* Saving re-renders the whole panel, because storing credentials is what
-     turns "Not set up" into a sign-in button. CREDNOTE carries the outcome
-     across that rebuild, and holds the section open so it can be read. */
+/* Everything that is true but rarely wanted: the Trakt application's own
+   credentials, the address to register with it, the typed-code fallback,
+   and signing out. Collapsed unless something here needs attention. */
+function renderTraktSetup() {
+  const wrap = el("details", { class: "creds", id: "traktsetup" });
   if (!CONN.configured || CREDNOTE.text) wrap.setAttribute("open", "open");
   wrap.append(el("summary", {}, CONN.configured
-    ? "Trakt application credentials" : "Set up the Trakt application"));
+    ? "Trakt application settings"
+    : "Set up the Trakt application \u2014 needed once"));
 
   const redirect = window.location.origin + "/api/trakt/callback";
-  const steps = el("p", { class: "hint" });
-  steps.append(document.createTextNode(
-    "Create an application at trakt.tv/oauth/applications and give it this "
-    + "redirect URI, exactly as shown \u2014 Trakt will not send a sign-in "
-    + "anywhere it was not told about first:"));
-  wrap.append(steps);
+  wrap.append(el("p", { class: "hint" },
+    "Trakt issues credentials per application rather than per person, so "
+    + "register one at trakt.tv/oauth/applications and give it this redirect "
+    + "URI, exactly as shown \u2014 Trakt will not send a sign-in anywhere "
+    + "it was not told about first:"));
   wrap.append(el("div", { class: "uri" }, redirect));
   wrap.append(el("p", { class: "hint" },
-    "Add urn:ietf:wg:oauth:2.0:oob as a second redirect URI if you want the "
-    + "code fallback as well. Then paste the application's Client ID and "
-    + "Secret here; they are stored on this box and sent nowhere else."));
+    "Then paste the application's Client ID and Secret here. They are stored "
+    + "on this box and sent nowhere else."));
 
   const id = el("input", { type: "text", class: "credfield",
                            placeholder: "Client ID",
@@ -3190,10 +3178,44 @@ function renderTraktCreds() {
       say.textContent = err.message;
     } finally { save.disabled = false; }
   });
-
   const row = el("div", { class: "credrow" });
   row.append(id, secret, save, say);
   wrap.append(row);
+
+  const extras = el("div", { class: "credrow altrow" });
+  if (CONN.connected) {
+    const off = el("button", { class: "action", type: "button" },
+                    "Disconnect");
+    off.addEventListener("click", async () => {
+      await fetch("/api/trakt/disconnect", { method: "POST" });
+      CREDNOTE = { text: "", bad: false };
+      loadConnection();
+    });
+    extras.append(off);
+  } else if (CONN.configured) {
+    /* For when this dashboard's address cannot be registered with Trakt -
+       it moves, or is reached through something that rewrites it. Trakt
+       reads a typed code from anywhere. */
+    const viaCode = el("button", { class: "action", type: "button" },
+                        "Sign in with a code instead");
+    const note = el("span", { class: "say" });
+    viaCode.addEventListener("click", async () => {
+      viaCode.disabled = true;
+      try {
+        const response = await fetch("/api/trakt/connect", { method: "POST" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || response.status);
+        CONN = data;
+        renderConnection();
+        watchConnection();
+      } catch (err) {
+        note.className = "say bad";
+        note.textContent = err.message;
+      } finally { viaCode.disabled = false; }
+    });
+    extras.append(viaCode, note);
+  }
+  if (extras.childNodes.length) wrap.append(extras);
   return wrap;
 }
 
@@ -3212,7 +3234,7 @@ function watchConnection() {
 
 async function fetchFromTrakt(button, say) {
   button.disabled = true;
-  button.textContent = "Fetching…";
+  button.textContent = "Importing…";
   say.textContent = "Reading your whole Trakt history; this can take a "
     + "minute.";
   const host = $("traktreport");
@@ -3222,15 +3244,17 @@ async function fetchFromTrakt(button, say) {
     const report = await response.json();
     if (!response.ok) throw new Error(report.error || response.status);
     TRAKT = report;
+    say.className = "say";
     say.textContent = "";
     renderTraktReport();
     /* The report lives in the import panel below, so send the reader there. */
     $("traktreport").scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (err) {
-    say.textContent = "Could not fetch: " + err.message;
+    say.className = "say bad";
+    say.textContent = "Could not import: " + err.message;
   } finally {
     button.disabled = false;
-    button.textContent = "Fetch everything from Trakt";
+    button.textContent = "Import from Trakt";
   }
 }
 
