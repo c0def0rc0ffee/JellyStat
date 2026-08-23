@@ -34,12 +34,14 @@ import backup
 import history
 import importer
 import library
+import lists
 import media as artwork
 import main as core
 import playback
 import ratings
 import reconcile
 import screentime
+import trakt
 import trakt_import
 import recommend
 import webdata
@@ -419,6 +421,10 @@ class Handler(BaseHTTPRequestHandler):
                 parse_qs(route.query))
         elif route.path == "/api/trakt/unmatched":
             self._serve_trakt_unmatched(parse_qs(route.query))
+        elif route.path == "/api/lists":
+            self._serve_lists()
+        elif route.path == "/api/list":
+            self._serve_list(parse_qs(route.query))
         elif route.path == "/api/reconcile":
             try:
                 self._send_json(200, reconcile.survey())
@@ -512,6 +518,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/trakt/stage":
             self._serve_trakt_stage()
+            return
+        if path == "/api/trakt/stage-zip":
+            self._serve_trakt_stage_zip()
+            return
+        if path.startswith("/api/list/"):
+            self._serve_list_action(path[len("/api/list/"):])
             return
         if path == "/api/trakt/commit":
             self._serve_trakt_commit()
@@ -1014,6 +1026,132 @@ class Handler(BaseHTTPRequestHandler):
             log("Trakt staging failed: %s" % err, xbmc.LOGERROR)
             self._send_json(500, {"error": "Could not read that export: %s"
                                            % err})
+
+    # ---- lists ------------------------------------------------------------
+
+    def _serve_lists(self):
+        try:
+            self._send_json(200, {"lists": lists.all_lists()})
+        except Exception as err:
+            log("Could not read the lists: %s" % err, xbmc.LOGERROR)
+            self._send_json(500, {"error": str(err)})
+
+    def _serve_list(self, query):
+        try:
+            list_id = int((query.get("id") or ["0"])[0])
+        except ValueError:
+            self._send_json(400, {"error": "Which list?"})
+            return
+        try:
+            found = lists.get(list_id)
+        except Exception as err:
+            log("Could not read list %s: %s" % (list_id, err), xbmc.LOGERROR)
+            self._send_json(500, {"error": str(err)})
+            return
+        if found is None:
+            self._send_json(404, {"error": "There is no such list."})
+            return
+        self._send_json(200, found)
+
+    def _serve_list_action(self, action):
+        """Create, rename, delete a list, or move a title on and off one.
+
+        Deleting is the one that can lose work, so it takes the list id and
+        the name together and refuses if they disagree: an id that has been
+        sitting in a stale browser tab since before the list was rebuilt
+        would otherwise delete whatever now holds that number.
+        """
+        body = self._json_body()
+        try:
+            if action == "create":
+                list_id = lists.create(body.get("name"),
+                                       body.get("description") or "")
+                self._send_json(200, {"id": list_id,
+                                      "list": lists.get(list_id)})
+            elif action == "rename":
+                lists.rename(int(body.get("id")), body.get("name"),
+                             body.get("description"))
+                self._send_json(200, {"list": lists.get(int(body.get("id")))})
+            elif action == "delete":
+                list_id = int(body.get("id"))
+                held = lists.get(list_id)
+                if held is None:
+                    self._send_json(404, {"error": "There is no such list."})
+                    return
+                if lists.norm(body.get("name")) != lists.norm(held["name"]):
+                    self._send_json(409, {
+                        "error": "That list is now called %r. Reload the "
+                                 "page and try again." % held["name"]})
+                    return
+                lists.delete(list_id)
+                self._send_json(200, {"deleted": list_id})
+            elif action == "add":
+                added = lists.add_item(int(body.get("id")),
+                                       body.get("item_id"))
+                self._send_json(200, {"added": added,
+                                      "list": lists.get(int(body.get("id")))})
+            elif action == "remove":
+                lists.remove(int(body.get("id")), int(body.get("entry")))
+                self._send_json(200, {"list": lists.get(int(body.get("id")))})
+            elif action == "attach":
+                self._send_json(200, {"matched": lists.attach()})
+            else:
+                self._send(404, "Not found", "text/plain; charset=utf-8")
+        except lists.ListError as err:
+            self._send_json(400, {"error": str(err)})
+        except (TypeError, ValueError):
+            self._send_json(400, {"error": "That request was incomplete."})
+        except Exception as err:
+            log("List action %r failed: %s" % (action, err), xbmc.LOGERROR)
+            self._send_json(500, {"error": str(err)})
+
+    def _serve_trakt_stage_zip(self):
+        """The export as a .zip, unpacked here rather than in the browser.
+
+        Browsers have no zip reader - `DecompressionStream` does raw
+        deflate and stops there - so doing this client-side would mean
+        hand-parsing a central directory in JavaScript. Python has had
+        zipfile since forever, so the archive comes across whole and is
+        opened here, and the envelope it produces is the same one the file
+        picker builds. Everything after this point is one code path.
+        """
+        try:
+            raw = self._read_body(trakt.MAX_ZIP_BYTES)
+        except importer.ImportError_ as err:
+            self._send_json(413, {"error": str(err)})
+            return
+        try:
+            got = trakt.read_zip(raw, self.headers.get("X-Filename") or "")
+        except trakt.TraktZipError as err:
+            self._send_json(400, {"error": str(err)})
+            return
+        except Exception as err:
+            log("Could not read the Trakt archive: %s" % err, xbmc.LOGERROR)
+            self._send_json(500, {"error": "Could not read that .zip: %s"
+                                           % err})
+            return
+        if not got["envelope"]:
+            self._send_json(400, {"error":
+                "That .zip has no Trakt history, ratings or lists in it."})
+            return
+        try:
+            report = trakt_import.stage(got["envelope"])
+        except trakt_import.TraktImportError as err:
+            self._send_json(400, {"error": str(err)})
+            return
+        except core.JellyStatError as err:
+            self._send_json(503, {"error": str(err)})
+            return
+        except Exception as err:
+            log("Trakt staging failed: %s" % err, xbmc.LOGERROR)
+            self._send_json(500, {"error": "Could not read that export: %s"
+                                           % err})
+            return
+        # Counted server-side here, unlike the file-picker path where the
+        # browser knows it, so the report says the same thing either way.
+        report["skipped_files"] = got["skipped"]
+        report["read_files"] = got["read"]
+        self._send_json(200, report)
 
     def _serve_trakt_commit(self):
         body = self._json_body()

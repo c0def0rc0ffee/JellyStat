@@ -24,7 +24,11 @@ Nothing here writes: parsing and matching are separate from committing so
 the staging screen can show exactly what would happen first.
 """
 
+import io
+import json
+import os
 import re
+import zipfile
 from datetime import datetime
 
 import xbmc
@@ -41,6 +45,15 @@ ACTIONS = ("scrobble", "watch", "checkin")
 
 MOVIE_FALLBACK_MINUTES = 100
 EPISODE_FALLBACK_MINUTES = 45
+
+# A Trakt export arrives as a .zip. Two separate caps, because one number
+# cannot do both jobs: JSON compresses about ten to one, so a cap loose
+# enough to admit a real export as a zip would admit a 500MB unpacking as
+# well. MAX_ZIP_BYTES bounds what is read off the socket; MAX_UNPACKED_BYTES
+# bounds what the archive claims it will become, checked against the central
+# directory before a single entry is opened.
+MAX_ZIP_BYTES = 64 * 1024 * 1024
+MAX_UNPACKED_BYTES = 512 * 1024 * 1024
 
 
 def log(message, level=xbmc.LOGINFO):
@@ -76,7 +89,13 @@ def _stamp(value):
 # ---------------------------------------------------------------------------
 
 def classify(records):
-    """What a single Trakt export file holds, or None if not ours."""
+    """What a single Trakt export file holds, or None if not ours.
+
+    Content, not filename. Trakt has renamed these files more than once and
+    a third-party exporter names them whatever it likes, so every file is
+    opened and asked what it is. The one exception is a custom list, whose
+    *name* lives only in the filename - see list_name_from().
+    """
     if not isinstance(records, list) or not records:
         return None
     row = records[0]
@@ -90,7 +109,52 @@ def classify(records):
             return "ratings-" + kind
     if "paused_at" in row and "progress" in row:
         return "playback"
+    # Lists. All three are "a set of titles" and become one lists table row
+    # each; they differ only in where the name comes from.
+    if "collected_at" in row:
+        return "collection"
+    if "listed_at" in row:
+        return "list-items"
+    # The lists index: names and descriptions, no titles. Matched last
+    # because it is the loosest test here - a row with a name and a privacy
+    # setting and none of the stamps above.
+    if "name" in row and ("privacy" in row or "item_count" in row):
+        return "list-index"
     return None
+
+
+def list_slug_from(path):
+    """The list's own part of its filename, with Trakt's scaffolding off.
+
+    Deliberately light-handed. An earlier version also stripped trailing
+    digits, on the theory that they were list ids, and turned "Halloween
+    2019" into "Halloween" - losing the year *and*, worse, breaking the
+    match against the lists index that would have supplied the real name.
+    A number at the end of a list name is far more often a year than an id.
+    """
+    stem = os.path.splitext(os.path.basename(path or ""))[0]
+    stem = re.sub(r"^(?:user-)?lists?[-_]", "", stem, flags=re.I)
+    stem = re.sub(r"[-_]items?$", "", stem, flags=re.I)
+    return stem.strip()
+
+
+def list_name_from(path):
+    """A readable list name from the zip entry that held it.
+
+    The only thing in a Trakt export that content-sniffing cannot recover.
+    Every item row inside a custom list is identical in shape to every item
+    row inside every other custom list; what separates "Halloween 2019"
+    from "Films Dad Likes" is the filename and nothing else. Used only when
+    the export carries no lists index to give the name properly.
+    """
+    slug = list_slug_from(path).replace("-", " ").replace("_", " ").strip()
+    if not slug:
+        return "Trakt list"
+    # Title-cased only here, in the fallback. Where the export carries a
+    # lists index the user's own capitalisation is used untouched; this is
+    # for the case where all that survives is a slug, and "films dad likes"
+    # reads as a mistake where "Films Dad Likes" reads as a name.
+    return slug if slug != slug.lower() else slug.title()
 
 
 def ids_of(node):
@@ -101,6 +165,191 @@ def ids_of(node):
         value = raw.get(key)
         if value:
             out[key] = str(value)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Reading the archive
+# ---------------------------------------------------------------------------
+
+class TraktZipError(Exception):
+    """A .zip that could not be read as a Trakt export."""
+
+
+def _unpacked_size(archive):
+    """What the archive says it will become, from the central directory.
+
+    Read from the header rather than measured while extracting, so an
+    archive that would exhaust this box's memory is refused before any of
+    it is decompressed rather than after.
+    """
+    return sum(info.file_size for info in archive.infolist()
+               if not info.is_dir())
+
+
+def read_zip(raw, name="export.zip"):
+    """A Trakt export .zip -> the envelope stage() already takes.
+
+    The whole point of this function is that it produces exactly what the
+    browser's file picker produces, so everything downstream - matching,
+    the staging report, the modes, the commit - is reached by one path and
+    cannot drift into two behaviours.
+
+    Entries are opened one at a time and the decoded text dropped as soon
+    as it is parsed. Kodi runs on boxes with a few hundred megabytes to
+    spare, and holding the archive, every extracted file and every parsed
+    object at once is the difference between working and being killed.
+    """
+    if len(raw) > MAX_ZIP_BYTES:
+        raise TraktZipError(
+            "That archive is over %d MB." % (MAX_ZIP_BYTES // 2 ** 20))
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        raise TraktZipError(
+            "That file is not a readable .zip. If you unzipped it already, "
+            "select the .json files inside it instead.")
+    unpacked = _unpacked_size(archive)
+    if unpacked > MAX_UNPACKED_BYTES:
+        raise TraktZipError(
+            "That archive unpacks to %d MB, which is more than this addon "
+            "will read." % (unpacked // 2 ** 20))
+
+    envelope = {}
+    lists = []
+    index = {}
+    skipped = read = 0
+    for info in archive.infolist():
+        if info.is_dir():
+            continue
+        # Only JSON is looked at. A Trakt export also carries images and
+        # the odd README, and decoding a JPEG as UTF-8 to discover it is
+        # not a ratings file is wasted work on a slow box.
+        if not info.filename.lower().endswith(".json"):
+            skipped += 1
+            continue
+        try:
+            with archive.open(info) as handle:
+                records = json.loads(handle.read().decode("utf-8"))
+        except Exception as err:
+            log("Skipping %s in the export: %s" % (info.filename, err),
+                xbmc.LOGWARNING)
+            skipped += 1
+            continue
+        kind = classify(records)
+        if kind is None:
+            skipped += 1
+            continue
+        read += 1
+        if kind == "list-index":
+            for row in records:
+                if isinstance(row, dict) and row.get("name"):
+                    index[norm(row["name"])] = row
+        elif kind in ("list-items", "collection"):
+            lists.append({"path": info.filename, "kind": kind,
+                          "records": records})
+        else:
+            envelope[kind] = (envelope.get(kind) or []) + records
+
+    if lists:
+        envelope["lists"] = _name_lists(lists, index)
+    return {"envelope": envelope, "skipped": skipped, "read": read}
+
+
+def _is_collection(entry):
+    """Whether this file is part of the Trakt collection rather than a list.
+
+    Checked by content where read_zip has already classified it, and by
+    filename otherwise. The filename test exists because the browser's file
+    picker cannot classify a collection any more precisely than "a set of
+    titles" - and without it the same export named its collection two
+    different things depending on whether you handed over the .zip or the
+    files inside it.
+    """
+    if entry.get("kind") == "collection":
+        return True
+    return bool(re.match(r"^collections?\b",
+                         list_slug_from(entry.get("path")), re.I))
+
+
+def _name_lists(found, index):
+    """Attach a name and description to each set of list items.
+
+    The lists index, when the export carries one, holds what the user
+    actually called each list and what they wrote under it. The filename
+    is the fallback, and a poor one - it has been through a slug.
+
+    Entries that come out with the same name are merged rather than
+    returned twice. Every real Trakt export contains both
+    collection-movies.json and collection-shows.json, which are one list by
+    any reading, and returning them separately meant the commit tried to
+    create "Trakt collection" twice and took the whole import down with it.
+    """
+    out, seen = [], {}
+    for entry in found:
+        if _is_collection(entry):
+            # Collection files split by media type and are one concept, not
+            # two lists: collection-movies.json and collection-shows.json
+            # both mean "things I own".
+            name, description = "Trakt collection", "Imported from Trakt"
+            kind = "collection"
+        else:
+            # Looked up on the slug rather than the tidied-up name, because
+            # norm() drops the separators anyway and the slug is what the
+            # name was turned into: "Halloween 2019" and "halloween-2019"
+            # both normalise to halloween2019 and meet here.
+            meta = index.get(norm(list_slug_from(entry.get("path")))) or {}
+            name = meta.get("name") or list_name_from(entry.get("path"))
+            description = meta.get("description") or ""
+            kind = entry.get("kind") or "list-items"
+        records = entry.get("records") or []
+        held = seen.get(norm(name))
+        if held is not None:
+            held["records"] = held["records"] + records
+            continue
+        made = {"name": name, "description": description, "kind": kind,
+                "records": records}
+        seen[norm(name)] = made
+        out.append(made)
+    return out
+
+
+def parse_list_items(records):
+    """List rows -> the shape the lists table stores.
+
+    Rank is kept where Trakt gave one. A list somebody ordered by hand is
+    not the same object as the same titles in alphabetical order, and
+    dropping the order would quietly turn one into the other.
+    """
+    out = []
+    for row in records:
+        if not isinstance(row, dict):
+            continue
+        kind = row.get("type")
+        if kind not in ("movie", "episode", "show", "season"):
+            # Collection files often omit `type` and simply carry the node.
+            kind = ("movie" if "movie" in row
+                    else "show" if "show" in row else None)
+        if kind not in ("movie", "episode", "show"):
+            continue
+        node = row.get(kind) or {}
+        show = row.get("show") or {}
+        out.append({
+            "kind": kind,
+            "media": {"movie": "movie", "episode": "episode",
+                      "show": "series"}[kind],
+            "title": node.get("title") or "?",
+            "show": show.get("title") if kind == "episode" else None,
+            "season": node.get("season") if kind == "episode" else None,
+            "episode": node.get("number") if kind == "episode" else None,
+            "year": node.get("year") or show.get("year"),
+            "rank": row.get("rank"),
+            "added_at": _stamp(row.get("listed_at")
+                               or row.get("collected_at")),
+            "ids": ids_of(node),
+            "show_ids": ids_of(show) if kind == "episode" else {},
+        })
+    out.sort(key=lambda r: (r["rank"] is None, r["rank"] or 0))
     return out
 
 
@@ -175,15 +424,42 @@ def parse_ratings(records):
 
 
 def parse(envelope):
-    """A whole gathered export -> {history: [...], ratings: [...]}."""
-    history, ratings = [], []
+    """A whole gathered export -> {history, ratings, lists}.
+
+    `lists` is a list of lists, not a flat set of rows like the other two:
+    which list a title was on is the whole of the information, so it
+    cannot be flattened here and reconstructed later.
+    """
+    history, ratings, collections = [], [], []
+    # Two callers put lists in here. read_zip has already named them from
+    # the archive; the file picker cannot, because a browser File carries a
+    # name and nothing else, so it sends {path, records} and the naming
+    # happens below - in one place, under one set of rules, rather than
+    # reimplemented in JavaScript where it would quietly drift.
+    named, index = [], {}
     for kind, records in (envelope or {}).items():
         if kind == "history":
             history.extend(parse_history(records))
         elif kind.startswith("ratings-"):
             ratings.extend(parse_ratings(records))
+        elif kind == "lists":
+            named.extend(records or [])
+        elif kind == "list-index":
+            for row in records or []:
+                if isinstance(row, dict) and row.get("name"):
+                    index[norm(row["name"])] = row
+    for entry in _name_lists(
+            [e for e in named if not e.get("name")], index) + [
+            e for e in named if e.get("name")]:
+        items = parse_list_items(entry.get("records") or [])
+        if not items:
+            continue
+        collections.append({"name": entry.get("name") or "Trakt list",
+                            "description": entry.get("description") or "",
+                            "kind": entry.get("kind") or "list-items",
+                            "items": items})
     history.sort(key=lambda s: s["started_at"])
-    return {"history": history, "ratings": ratings}
+    return {"history": history, "ratings": ratings, "lists": collections}
 
 
 # ---------------------------------------------------------------------------

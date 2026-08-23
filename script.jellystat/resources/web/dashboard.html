@@ -676,6 +676,35 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Import */
 .filerow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.filerow input[type=text] { font-size: 13px; padding: 7px 10px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2);
+  color: inherit; min-width: 200px; }
+/* Lists */
+.listrow { display: flex; gap: 12px; align-items: center; padding: 11px 2px;
+  border-bottom: 1px solid var(--line); }
+.listrow:last-child { border-bottom: 0; }
+.listrow .nm { font-size: 14px; font-weight: 600; flex: 1; min-width: 0;
+  text-align: left; background: none; border: 0; color: inherit;
+  cursor: pointer; padding: 0; }
+.listrow .nm:hover { color: var(--accent); }
+.listrow .nm .d { font-size: 12.5px; color: var(--ink-dim);
+  font-weight: 400; margin-top: 3px; }
+.listrow .n { font-size: 12.5px; color: var(--ink-dim); flex: none;
+  font-variant-numeric: tabular-nums; }
+.listrow .tag { font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ink-dim); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 7px; flex: none; }
+.entryrow { display: flex; gap: 10px; align-items: baseline; padding: 8px 2px;
+  border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.entryrow:last-child { border-bottom: 0; }
+.entryrow .rk { color: var(--ink-dim); font-size: 12px; flex: none;
+  min-width: 22px; font-variant-numeric: tabular-nums; }
+.entryrow .t { flex: 1; min-width: 0; }
+.entryrow .t .sub { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+.entryrow .miss { color: var(--warn); font-size: 12px; flex: none; }
+.entryrow button { border: 0; background: transparent; color: var(--ink-dim);
+  cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
+.entryrow button:hover { color: var(--warn); }
 input[type=file] { font-size: 13px; color: var(--ink-dim); max-width: 100%; }
 .stagebox { margin-top: 14px; border: 1px solid var(--line);
   border-radius: 10px; padding: 14px; background: var(--panel-2); }
@@ -736,6 +765,9 @@ button.danger { color: var(--warn); }
     <button data-view="rate">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 14V3M4 3l9 3-3 3 3 3-9 3"/></svg>
       Rate</button>
+    <button data-view="lists">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
+      Lists</button>
     <button data-view="data">
       <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/></svg>
       Data</button>
@@ -948,6 +980,35 @@ button.danger { color: var(--warn); }
       </section>
     </div>
 
+    <div id="view-lists" style="display:none">
+      <section class="panel">
+        <h2>Lists</h2>
+        <p class="hint">A list is a set of titles you chose, which is the one
+          thing nothing else here can hold. Entries keep the title, year and
+          ids they were made with, so a list can name things this server does
+          not have yet — they attach themselves if those titles arrive.</p>
+        <div class="filerow">
+          <input type="text" id="listname" placeholder="New list name"
+                 maxlength="120">
+          <button class="action" id="listcreate">Create</button>
+          <button class="action" id="listattach"
+                  title="Match entries that had no title in your library against it again">Re-check unmatched</button>
+        </div>
+        <p class="hint" id="listnote"></p>
+        <div id="listindex"></div>
+      </section>
+      <section class="panel" id="listdetailpanel" style="display:none">
+        <h2 id="listdetailname">List</h2>
+        <p class="hint" id="listdetailsub"></p>
+        <div class="filerow">
+          <button class="action" id="listrename">Rename</button>
+          <button class="action" id="listdelete">Delete list</button>
+          <button class="action" id="listclose">Close</button>
+        </div>
+        <div id="listdetail"></div>
+      </section>
+    </div>
+
     <div id="view-data" style="display:none">
 
     <section class="panel">
@@ -977,13 +1038,14 @@ button.danger { color: var(--warn); }
 
     <section class="panel">
       <h2>Import from a Trakt export file</h2>
-      <p class="hint">Ask Trakt for an export of your data, then select the
-        whole folder here. The files are read in the browser and matched
-        against your library: you see what was found, choose how it should
-        meet what you already have, and nothing is written until you do. A
-        backup is taken either side.</p>
+      <p class="hint">Ask Trakt for an export of your data, then drop the
+        .zip here exactly as it arrived — or, if you have already
+        unpacked it, select the .json files inside. Watch history, ratings
+        and your lists are matched against your library: you see what was
+        found, choose how it should meet what you already have, and nothing
+        is written until you do. A backup is taken either side.</p>
       <div class="filerow">
-        <input type="file" id="traktfiles" multiple accept=".json">
+        <input type="file" id="traktfiles" multiple accept=".json,.zip">
         <button class="action" id="traktstage">Read the export</button>
       </div>
       <div id="traktreport"></div>
@@ -3395,6 +3457,299 @@ function watchReconcile() {
   }, 2000);
 }
 
+/* ---------- Lists ---------- */
+
+let LISTS = [];
+let LIST_OPEN = null;
+
+async function listApi(path, body) {
+  const opts = body === undefined
+    ? {}
+    : { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body) };
+  const response = await fetch(path, opts);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || response.status);
+  return data;
+}
+
+function listNote(text, bad) {
+  const note = $("listnote");
+  note.textContent = text || "";
+  note.className = bad ? "hint warnline" : "hint";
+}
+
+async function loadLists(keepOpen) {
+  const host = $("listindex");
+  try {
+    LISTS = (await listApi("/api/lists")).lists;
+  } catch (err) {
+    host.textContent = "";
+    host.append(el("p", { class: "empty" },
+      "Could not read your lists: " + err.message));
+    return;
+  }
+  renderListIndex();
+  /* The open list is re-fetched rather than reused: adding a title to it is
+     what usually got us here, and showing the copy from before the write
+     would look like the add had failed. */
+  if (keepOpen && LIST_OPEN) openList(LIST_OPEN);
+}
+
+function renderListIndex() {
+  const host = $("listindex");
+  host.textContent = "";
+  if (!LISTS.length) {
+    host.append(el("p", { class: "empty" },
+      "No lists yet. Make one above, or import your Trakt lists from the "
+      + "Data page."));
+    return;
+  }
+  LISTS.forEach((list) => {
+    const row = el("div", { class: "listrow" });
+    const name = el("button", { class: "nm", type: "button" });
+    name.append(document.createTextNode(list.name));
+    if (list.description) name.append(el("div", { class: "d" }, list.description));
+    name.addEventListener("click", () => openList(list.id));
+    row.append(name);
+    if (list.source === "trakt") row.append(el("span", { class: "tag" }, "Trakt"));
+    /* Both numbers, always. "40 titles" alone hides that fourteen of them
+       are not on this server, which is the thing worth knowing about an
+       imported list. */
+    row.append(el("span", { class: "n" },
+      list.count === list.matched
+        ? plural(list.count, "title")
+        : num(list.matched) + " of " + num(list.count) + " in your library"));
+    host.append(row);
+  });
+}
+
+async function openList(listId) {
+  LIST_OPEN = listId;
+  const panel = $("listdetailpanel");
+  const host = $("listdetail");
+  panel.style.display = "block";
+  host.textContent = "";
+  host.append(el("p", { class: "hint" }, "Loading…"));
+  let list;
+  try {
+    list = await listApi("/api/list?id=" + encodeURIComponent(listId));
+  } catch (err) {
+    host.textContent = "";
+    host.append(el("p", { class: "empty" }, "Could not open that list: "
+      + err.message));
+    return;
+  }
+  $("listdetailname").textContent = list.name;
+  const bits = [plural(list.count, "title")];
+  if (list.count !== list.matched) {
+    bits.push((list.count - list.matched) + " not in your library yet");
+  }
+  if (list.description) bits.push(list.description);
+  $("listdetailsub").textContent = bits.join(" \u2014 ");
+  host.textContent = "";
+  if (!list.items.length) {
+    host.append(el("p", { class: "empty" },
+      "Nothing on this list yet. Open any film or show and use "
+      + "\u201cAdd to list\u201d."));
+    return;
+  }
+  list.items.forEach((entry, i) => {
+    const row = el("div", { class: "entryrow" });
+    row.append(el("span", { class: "rk" }, String(entry.rank || i + 1)));
+    const title = el("div", { class: "t" });
+    const label = entry.media === "episode" && entry.show
+      ? entry.show + " S" + entry.season + "E" + entry.episode
+      : entry.title;
+    if (entry.in_library) {
+      /* Films have a page keyed by item id; shows and episodes have one
+         keyed by the series name, which is what openShow takes. */
+      const link = el("button", { class: "nm", type: "button" }, label);
+      link.addEventListener("click", () => {
+        if (entry.media === "movie") openMovie(entry.item_id);
+        else openShow(entry.show || entry.title);
+      });
+      title.append(link);
+    } else {
+      title.append(document.createTextNode(label));
+    }
+    const sub = [];
+    if (entry.year) sub.push(entry.year);
+    if (entry.play_count) sub.push(entry.play_count + " plays");
+    if (entry.user_rating) sub.push("rated " + entry.user_rating);
+    if (sub.length) title.append(el("div", { class: "sub" }, sub.join(" \u00b7 ")));
+    row.append(title);
+    if (!entry.in_library) {
+      row.append(el("span", { class: "miss" },
+        entry.item_id ? "gone from server" : "not in your library"));
+    }
+    const drop = el("button", { type: "button", title: "Remove from list" },
+      "\u00d7");
+    drop.addEventListener("click", async () => {
+      drop.disabled = true;
+      try {
+        await listApi("/api/list/remove", { id: listId, entry: entry.id });
+        await loadLists(true);
+      } catch (err) {
+        listNote("Could not remove that: " + err.message, true);
+        drop.disabled = false;
+      }
+    });
+    row.append(drop);
+    host.append(row);
+  });
+}
+
+$("listcreate").addEventListener("click", async () => {
+  const field = $("listname");
+  const name = field.value.trim();
+  if (!name) { listNote("Give the list a name first.", true); return; }
+  try {
+    const made = await listApi("/api/list/create", { name: name });
+    field.value = "";
+    listNote("Created \u201c" + name + "\u201d.");
+    await loadLists();
+    openList(made.id);
+  } catch (err) {
+    listNote(err.message, true);
+  }
+});
+
+$("listname").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") $("listcreate").click();
+});
+
+$("listattach").addEventListener("click", async () => {
+  const button = $("listattach");
+  button.disabled = true;
+  listNote("Checking\u2026");
+  try {
+    const got = await listApi("/api/list/attach", {});
+    listNote(got.matched
+      ? got.matched + " list entries found a title in your library."
+      : "Nothing new matched \u2014 every entry that can be matched already is.");
+    await loadLists(true);
+  } catch (err) {
+    listNote(err.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("listrename").addEventListener("click", async () => {
+  if (!LIST_OPEN) return;
+  const current = $("listdetailname").textContent;
+  const name = window.prompt("Rename this list", current);
+  if (name === null || name.trim() === current) return;
+  try {
+    await listApi("/api/list/rename", { id: LIST_OPEN, name: name });
+    await loadLists(true);
+  } catch (err) {
+    listNote(err.message, true);
+  }
+});
+
+$("listdelete").addEventListener("click", async () => {
+  if (!LIST_OPEN) return;
+  const name = $("listdetailname").textContent;
+  /* Deleting a list is the only thing on this page that cannot be undone,
+     so it asks with the name in the question rather than "are you sure",
+     and the name goes to the server to be checked against the id. */
+  if (!window.confirm("Delete \u201c" + name + "\u201d and everything on it? "
+      + "This cannot be undone.")) return;
+  try {
+    await listApi("/api/list/delete", { id: LIST_OPEN, name: name });
+    LIST_OPEN = null;
+    $("listdetailpanel").style.display = "none";
+    listNote("Deleted \u201c" + name + "\u201d.");
+    await loadLists();
+  } catch (err) {
+    listNote(err.message, true);
+  }
+});
+
+$("listclose").addEventListener("click", () => {
+  LIST_OPEN = null;
+  $("listdetailpanel").style.display = "none";
+});
+
+/* A list picker for an item page.
+
+   Built lazily and left empty until it is opened: every film page would
+   otherwise fetch the whole set of lists to render a control most visits
+   never touch. */
+function listPicker(itemId) {
+  const bar = el("div", { class: "playbar" });
+  const say = el("span", { class: "say" });
+  const picker = el("select");
+  picker.style.display = "none";
+  const add = el("button", { class: "action", type: "button" }, "Add");
+  add.style.display = "none";
+  const open = el("button", { class: "action", type: "button" },
+                  "Add to list\u2026");
+
+  function fail(message) {
+    say.className = "say warn";
+    say.textContent = message;
+  }
+
+  open.addEventListener("click", async () => {
+    open.disabled = true;
+    say.className = "say";
+    say.textContent = "";
+    let found;
+    try {
+      found = (await listApi("/api/lists")).lists;
+    } catch (err) {
+      open.disabled = false;
+      fail("Could not read your lists: " + err.message);
+      return;
+    }
+    picker.textContent = "";
+    found.forEach((list) => {
+      picker.append(el("option", { value: String(list.id) },
+                       list.name + " (" + list.count + ")"));
+    });
+    picker.append(el("option", { value: "new" }, "New list\u2026"));
+    open.style.display = "none";
+    picker.style.display = "";
+    add.style.display = "";
+  });
+
+  add.addEventListener("click", async () => {
+    add.disabled = picker.disabled = true;
+    say.className = "say";
+    say.textContent = "Adding\u2026";
+    try {
+      let listId = picker.value;
+      if (listId === "new") {
+        const name = window.prompt("Name the new list");
+        if (name === null || !name.trim()) {
+          say.textContent = "";
+          add.disabled = picker.disabled = false;
+          return;
+        }
+        listId = (await listApi("/api/list/create", { name: name })).id;
+      }
+      const got = await listApi("/api/list/add",
+                                { id: Number(listId), item_id: itemId });
+      /* The server says whether the row was new. Reporting "added" for a
+         title that was already on the list would teach you to distrust
+         the message the one time it matters. */
+      say.textContent = got.added
+        ? "Added to \u201c" + got.list.name + "\u201d."
+        : "Already on \u201c" + got.list.name + "\u201d.";
+    } catch (err) {
+      fail(err.message);
+    } finally {
+      add.disabled = picker.disabled = false;
+    }
+  });
+
+  bar.append(open, picker, add, say);
+  return bar;
+}
+
 /* ---------- Trakt import ---------- */
 
 let TRAKT = null;
@@ -3408,6 +3763,14 @@ const TRAKT_KINDS = {
   "ratings-movie": (row) => "rated_at" in row && row.type === "movie",
   "ratings-episode": (row) => "rated_at" in row && row.type === "episode",
   "ratings-show": (row) => "rated_at" in row && row.type === "show",
+  /* Lists are recognised here but not named here. A list's name survives
+     only in its filename, and turning "list-halloween-2019.json" back into
+     "Halloween 2019" is a set of rules that already exists in trakt.py.
+     So the file is sent with its name attached and the addon does it -
+     one implementation, not two that drift. */
+  "list-index": (row) => "name" in row
+    && ("privacy" in row || "item_count" in row),
+  lists: (row) => "listed_at" in row || "collected_at" in row,
 };
 
 function classify(records) {
@@ -3433,7 +3796,12 @@ async function readTraktFiles(files) {
     }
     const kind = classify(data);
     if (!kind) { skipped += 1; continue; }
-    envelope[kind] = (envelope[kind] || []).concat(data);
+    if (kind === "lists") {
+      envelope.lists = (envelope.lists || []).concat(
+        [{ path: file.name, records: data }]);
+    } else {
+      envelope[kind] = (envelope[kind] || []).concat(data);
+    }
   }
   return { envelope: envelope, skipped: skipped };
 }
@@ -3444,32 +3812,60 @@ $("traktstage").addEventListener("click", async () => {
   if (!files.length) {
     host.textContent = "";
     host.append(el("p", { class: "empty" },
-      "Choose the files from your Trakt export first."));
+      "Choose your Trakt export .zip, or the files from inside it, "
+      + "first."));
     return;
   }
   const button = $("traktstage");
+  const zips = files.filter((f) => /\.zip$/i.test(f.name));
   button.disabled = true;
   button.textContent = "Reading…";
   host.textContent = "";
-  host.append(el("p", { class: "hint" },
-    "Reading " + files.length + " files…"));
   try {
-    const { envelope, skipped } = await readTraktFiles(files);
-    if (!Object.keys(envelope).length) {
-      throw new Error("None of those files are Trakt history or ratings.");
+    let report;
+    if (zips.length) {
+      /* Browsers have no zip reader, so the archive goes across whole and
+         is unpacked by the addon. One at a time: a Trakt export is a
+         single .zip, and quietly merging two of them would produce a
+         report that is the sum of two exports with nothing on screen
+         saying so. */
+      if (zips.length > 1 || files.length > zips.length) {
+        throw new Error("Select either one .zip, or the .json files from "
+          + "inside it \u2014 not both at once.");
+      }
+      host.append(el("p", { class: "hint" },
+        "Sending " + zips[0].name + " and matching against your library "
+        + "\u2014 this reads your whole film catalogue and can take a "
+        + "minute."));
+      const response = await fetch("/api/trakt/stage-zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/zip",
+                   "X-Filename": zips[0].name },
+        body: zips[0],
+      });
+      report = await response.json();
+      if (!response.ok) throw new Error(report.error || response.status);
+    } else {
+      host.append(el("p", { class: "hint" },
+        "Reading " + files.length + " files…"));
+      const { envelope, skipped } = await readTraktFiles(files);
+      if (!Object.keys(envelope).length) {
+        throw new Error("None of those files are Trakt history, ratings or "
+          + "lists.");
+      }
+      host.textContent = "";
+      host.append(el("p", { class: "hint" },
+        "Matching against your library — this reads your whole film "
+        + "catalogue and can take a minute."));
+      const response = await fetch("/api/trakt/stage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: envelope }),
+      });
+      report = await response.json();
+      if (!response.ok) throw new Error(report.error || response.status);
+      report.skipped_files = skipped;
     }
-    host.textContent = "";
-    host.append(el("p", { class: "hint" },
-      "Matching against your library — this reads your whole film "
-      + "catalogue and can take a minute."));
-    const response = await fetch("/api/trakt/stage", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ files: envelope }),
-    });
-    const report = await response.json();
-    if (!response.ok) throw new Error(report.error || response.status);
-    report.skipped_files = skipped;
     TRAKT = report;
     renderTraktReport();
   } catch (err) {
@@ -3497,6 +3893,19 @@ function catLine(key, cat) {
     }
     return parts.join(" · ");
   }
+  if (key === "lists") {
+    const parts = [plural(cat.lists, "list") + ", "
+                   + num(cat.records) + " titles between them"];
+    if (cat.new_lists) parts.push(num(cat.new_lists) + " you do not have");
+    if (cat.existing_lists) {
+      parts.push(num(cat.existing_lists) + " share a name with one of yours");
+    }
+    if (cat.unmatched) {
+      parts.push(plural(cat.unmatched, "title")
+                 + " not in your library (kept anyway)");
+    }
+    return parts.join(" \u00b7 ");
+  }
   const parts = [num(cat.new) + " new"];
   if (cat.overwritten) parts.push(num(cat.overwritten) + " disagree with yours");
   if (cat.unchanged) parts.push(num(cat.unchanged) + " already the same");
@@ -3513,7 +3922,7 @@ function renderTraktReport() {
      it asks nothing. */
   const list = el("div", { class: "catlist" });
   const order = ["history", "ratings-movie", "ratings-episode",
-                 "ratings-show"];
+                 "ratings-show", "lists"];
   order.forEach((key) => {
     const cat = TRAKT.categories[key];
     if (!cat || !cat.records) return;
@@ -3535,6 +3944,24 @@ function renderTraktReport() {
         + "imported sitting's duration is assumed from the runtime and "
         + "marked as such."));
     }
+    /* Lists are named, so they are named. "3 lists" tells you the import
+       found something; "Halloween 2019, Films Dad Likes, Trakt collection"
+       tells you whether it found the right thing. */
+    if (key === "lists" && cat.detail && cat.detail.length) {
+      const eg = el("div", { class: "eg" });
+      cat.detail.slice(0, 12).forEach((d, i) => {
+        if (i) eg.append(document.createTextNode(", "));
+        eg.append(el("b", {}, d.name));
+        eg.append(document.createTextNode(" (" + d.records
+          + (d.exists ? ", you already have a list of that name" : "")
+          + ")"));
+      });
+      if (cat.detail.length > 12) {
+        eg.append(document.createTextNode(
+          " and " + (cat.detail.length - 12) + " more"));
+      }
+      body.append(eg);
+    }
     if (cat.examples && cat.examples.length) {
       const eg = el("div", { class: "eg" });
       eg.append(document.createTextNode("Disagrees, e.g. "));
@@ -3553,8 +3980,8 @@ function renderTraktReport() {
 
   if (TRAKT.skipped_files) {
     host.append(el("p", { class: "hint" },
-      TRAKT.skipped_files + " other files in the export were not history or "
-      + "ratings and were ignored."));
+      TRAKT.skipped_files + " other files in the export were not history, "
+      + "ratings or lists and were ignored."));
   }
 
   /* Step two: how it should meet what is already here. */
@@ -3580,6 +4007,7 @@ function renderModes() {
   const chosen = pickedCategories();
   const wantsHistory = chosen.includes("history");
   const wantsRatings = chosen.some((k) => k.startsWith("ratings-"));
+  const wantsLists = chosen.includes("lists");
 
   (TRAKT.modes || []).forEach((mode) => {
     const card = el("div", { class: "mode"
@@ -3604,6 +4032,17 @@ function renderModes() {
       cost.append(over);
       if (mode.kept) {
         cost.append(spanBits(num(mode.kept), "of yours kept"));
+      }
+    }
+    if (wantsLists) {
+      cost.append(spanBits(num(mode.lists), "lists written"));
+      /* Only ever non-zero under the mode that replaces list contents, and
+         that is exactly when it needs saying loudest. */
+      if (mode.list_entries_removed) {
+        const gone = el("span", { class: "risk" });
+        gone.append(el("b", {}, num(mode.list_entries_removed)),
+                    document.createTextNode(" of your list entries deleted"));
+        cost.append(gone);
       }
     }
     body.append(cost);
@@ -4119,7 +4558,8 @@ $("baknow").addEventListener("click", async (evt) => {
 /* ---------- views ---------- */
 
 const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
-               "movies-library", "tv-library", "recommended", "rate"];
+               "movies-library", "tv-library", "recommended", "rate",
+               "lists"];
 
 function showView(name) {
   VIEWS.forEach((view) => {
@@ -4151,6 +4591,7 @@ document.querySelectorAll("nav.side button").forEach((btn) => {
       loadRecs("tv");
     }
     if (btn.dataset.view === "rate") loadRateQueue(RATE_MEDIA);
+    if (btn.dataset.view === "lists") loadLists();
   });
 });
 
@@ -4687,6 +5128,7 @@ async function openMovie(id) {
   ]));
   host.append(duplicateNote(movie));
   host.append(playBar({ id: movie.id }));
+  host.append(listPicker(movie.id));
   if (!movie.watched) host.append(notWatchedNote("film"));
   host.append(castPanel(detail));
   if (movie.watched) host.append(sittingsPanel(movie.sittings));
@@ -4734,6 +5176,9 @@ async function openShow(name) {
       [show.rating ? "★ " + show.rating.toFixed(1) : null, "community"],
     ]));
     host.append(playBar({ show: show.name }));
+    if (show.series_id || show.id) {
+      host.append(listPicker(show.series_id || show.id));
+    }
     host.append(notWatchedNote("show"));
     host.append(similarPanel("tv"));
     CURRENT_ITEM = { media: "tv", name: show.name };
@@ -4750,6 +5195,9 @@ async function openShow(name) {
   ]));
 
   host.append(playBar({ show: show.name }));
+  if (show.series_id || show.id) {
+    host.append(listPicker(show.series_id || show.id));
+  }
 
   const seasons = el("section", { class: "panel" });
   seasons.append(el("h2", {}, "Episodes watched per season"));

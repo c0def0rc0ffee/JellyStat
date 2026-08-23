@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.jellystat" name="JellyStat" version="0.25.3" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.26.0" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -15,10 +15,23 @@ Browse watched films and TV, with genre breakdowns, average ratings and duplicat
 
 Because Jellyfin keeps only a play count and a single last-played date, JellyStat keeps its own log of individual sittings - the clock time, how much was watched, and one row per viewing rather than one per title. That is what the screen-time and viewing-habit charts are built from. Plays on other devices are picked up from the server too.
 
-Also: rate what you have watched and have the score written back to Jellyfin; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
+Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.25.3
+    <news lang="en_GB">v0.26.0
+Lists, and Trakt exports can be handed over as the .zip they arrive in.
+
+Lists
+- A new Lists section. Make a list, name it, and add anything to it from a film or show page. It is the one thing the rest of the addon had no way to hold: a set of titles you chose, with no property in common that a search could find.
+- A list can name titles this server does not have. Entries keep the title, year and ids they were made with, so an imported list still names all forty films when you only hold twenty, and the rest attach themselves if those titles ever arrive. "Re-check unmatched" runs that pass on demand.
+- Hand-ordered lists keep their order.
+
+Trakt import
+- Drop the export .zip in exactly as Trakt sent it. Unpacking happens in the addon, so there is no longer any need to extract it first and pick the files out by hand. The files inside still work if you prefer.
+- Your Trakt lists, watchlist and collection come across too, as a fifth category on the same preview screen. Each one is named, and says so where it shares a name with a list you already have.
+- Each import mode now says what it does to lists as well as to plays and ratings: leave existing lists alone, add what they are missing, or - only under "Everything, including repeat plays" - replace their contents. That last one counts the entries it would delete on the card, before you press it.
+
+v0.25.3
 Same contents as 0.25.2, under a new version number. A 0.25.2 zip went out before the now playing changes were in it, and Kodi compares version numbers rather than file contents, so boxes that had already taken that first 0.25.2 would never have been offered the corrected one.
 
 v0.25.2

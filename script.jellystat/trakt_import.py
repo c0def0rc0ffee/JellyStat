@@ -35,6 +35,7 @@ import xbmc
 import backup
 import importer
 import library
+import lists
 import playlog
 import trakt
 
@@ -47,7 +48,8 @@ PUSH_RATINGS = False
 # many hours are taken to be the same event, not two viewings.
 DEDUP_HOURS = 12
 
-CATEGORIES = ("history", "ratings-movie", "ratings-episode", "ratings-show")
+CATEGORIES = ("history", "ratings-movie", "ratings-episode", "ratings-show",
+              "lists")
 
 # How an import treats what is already here. Two independent decisions -
 # what to do about a play that looks already logged, and what to do about a
@@ -60,6 +62,14 @@ CATEGORIES = ("history", "ratings-movie", "ratings-episode", "ratings-show")
 #                          newer     take Trakt's only when it is the later
 #                                    of the two
 #                          overwrite take Trakt's wherever they disagree
+#   lists                  skip      a list of that name already here is
+#                                    left exactly as it is
+#                          merge     its missing titles are added, nothing
+#                                    already on it is removed
+#                          replace   its contents become Trakt's
+#
+# A list is never silently emptied except under `replace`, and `replace` is
+# only reachable from the mode that already says it will double up plays.
 MODES = {
     "missing": {
         "label": "Add what is missing",
@@ -67,9 +77,12 @@ MODES = {
         "blurb": "Brings over only what JellyStat does not already hold. "
                  "Nothing here is changed or removed: a play that looks "
                  "like one already logged is left out, and a title you have "
-                 "already rated keeps your score even where Trakt disagrees.",
+                 "already rated keeps your score even where Trakt disagrees. "
+                 "Lists you already have are left untouched; only ones you "
+                 "do not have yet are created.",
         "plays_skip_duplicates": True,
         "ratings": "only-new",
+        "lists": "skip",
     },
     "newer": {
         "label": "Take Trakt's only where it is newer",
@@ -77,28 +90,36 @@ MODES = {
         "blurb": "Adds everything missing, and where a rating exists in both "
                  "places takes Trakt's only if you rated it there more "
                  "recently than here. A score you changed in JellyStat since "
-                 "stays.",
+                 "stays. Titles missing from a list you already have are "
+                 "added to it, and nothing is taken off.",
         "plays_skip_duplicates": True,
         "ratings": "newer",
+        "lists": "merge",
     },
     "trakt-wins": {
         "label": "Let Trakt win",
         "badge": "RECOMMENDED",
         "blurb": "Adds everything missing and settles every disagreement in "
                  "Trakt's favour, so the two hold the same scores "
-                 "afterwards. Repeat plays are still skipped.",
+                 "afterwards. Repeat plays are still skipped, and lists "
+                 "gain what they are missing without losing anything.",
         "plays_skip_duplicates": True,
         "ratings": "overwrite",
+        "lists": "merge",
     },
     "everything": {
         "label": "Everything, including repeat plays",
         "badge": "ADVANCED",
         "blurb": "As above, but keeps plays that look like sittings already "
-                 "logged rather than dropping them. For when Trakt holds "
-                 "rewatches this box recorded once \u2014 it will double up "
-                 "anything that really was the same viewing.",
+                 "logged rather than dropping them, and replaces the "
+                 "contents of any list whose name matches rather than "
+                 "merging into it. For when Trakt holds rewatches this box "
+                 "recorded once \u2014 it will double up anything that "
+                 "really was the same viewing, and anything you added to a "
+                 "list here by hand will be gone.",
         "plays_skip_duplicates": False,
         "ratings": "overwrite",
+        "lists": "replace",
     },
 }
 DEFAULT_MODE = "trakt-wins"
@@ -202,6 +223,53 @@ def _rating_report(connection, ratings):
             "examples": examples}
 
 
+def _list_report(connection, collections, index):
+    """What these lists would do: matched titles, and clashes by name.
+
+    A list that already exists here is the interesting case, and the whole
+    reason the modes need a list policy: "Halloween 2019" on Trakt and
+    "Halloween 2019" here may be the same list a year apart or two
+    different things that happen to share a name, and only the person
+    looking at them knows which.
+    """
+    held = {}
+    for list_id, name, count in connection.execute(
+            "SELECT l.id, l.name, COUNT(i.id) FROM lists l "
+            "LEFT JOIN list_items i ON i.list_id = l.id GROUP BY l.id"):
+        held[lists.norm(name)] = (list_id, name, count)
+    detail = []
+    new_lists = existing = entries = matched = 0
+    for entry in collections:
+        for row in entry["items"]:
+            item_id, how = index.find(
+                row["media"], row["ids"], row["title"], show=row.get("show"),
+                season=row.get("season"), episode=row.get("episode"),
+                year=row.get("year"))
+            row["item_id"] = item_id
+            row["matched_by"] = how
+        found = sum(1 for r in entry["items"] if r.get("item_id"))
+        # Only whether it clashes is kept, not which list it clashed with:
+        # the commit re-resolves that for itself, because this answer can
+        # go stale between staging and confirming.
+        clash = held.get(lists.norm(entry["name"]))
+        entries += len(entry["items"])
+        matched += found
+        if clash:
+            existing += 1
+        else:
+            new_lists += 1
+        detail.append({"name": entry["name"], "records": len(entry["items"]),
+                       "matched": found,
+                       "unmatched": len(entry["items"]) - found,
+                       "exists": bool(clash),
+                       "existing_count": clash[2] if clash else 0})
+    detail.sort(key=lambda d: (-d["records"], d["name"]))
+    return {"label": "Lists", "records": entries, "lists": len(collections),
+            "new_lists": new_lists, "existing_lists": existing,
+            "matched": matched, "unmatched": entries - matched,
+            "detail": detail}
+
+
 def stage(envelope, progress=None):
     """Parse and match an export; write nothing. Returns the report."""
     with _lock:
@@ -209,11 +277,13 @@ def stage(envelope, progress=None):
     parsed = trakt.parse(envelope)
     history = parsed["history"]
     ratings = parsed["ratings"]
-    if not history and not ratings:
+    collections = parsed.get("lists") or []
+    if not history and not ratings and not collections:
         raise TraktImportError(
-            "No Trakt watch history or ratings found in those files. A Trakt "
-            "export contains watched-history-*.json and ratings-*.json; the "
-            "other files in it are not read by this import.")
+            "No Trakt watch history, ratings or lists found in those files. "
+            "A Trakt export contains watched-history-*.json, ratings-*.json "
+            "and your lists; the other files in it are not read by this "
+            "import.")
 
     index = trakt.Index()
     trakt.resolve(history, index)
@@ -260,6 +330,8 @@ def stage(envelope, progress=None):
             by_kind[row["kind"]].append(row)
         reports = {kind: _rating_report(connection, rows)
                    for kind, rows in by_kind.items()}
+        connection.executescript(lists.SCHEMA)
+        list_report = _list_report(connection, collections, index)
     finally:
         connection.close()
 
@@ -271,7 +343,7 @@ def stage(envelope, progress=None):
     token = secrets.token_hex(16)
     with _lock:
         _staged[token] = {"at": time.time(), "history": history,
-                          "ratings": ratings}
+                          "ratings": ratings, "lists": collections}
     categories = {
             "history": {
                 "label": "Watch history",
@@ -293,6 +365,7 @@ def stage(envelope, progress=None):
                                     records=len(by_kind["episode"])),
             "ratings-show": dict(reports["show"], label="Show ratings",
                                  records=len(by_kind["show"])),
+            "lists": list_report,
     }
     return {
         "token": token,
@@ -322,6 +395,7 @@ def _cost_modes(categories):
     rated = [categories[k] for k in
              ("ratings-movie", "ratings-episode", "ratings-show")
              if categories.get(k)]
+    listed = categories.get("lists") or {}
     out = []
     for key, mode in MODES.items():
         plays = (history.get("would_add", 0)
@@ -338,6 +412,19 @@ def _cost_modes(categories):
             written = sum(c.get("new", 0) + c.get("overwritten", 0)
                           for c in rated)
             changed = sum(c.get("overwritten", 0) for c in rated)
+        # Lists, on the same principle: the count is what this mode would
+        # actually touch, and `discarded` is what it would throw away -
+        # entries sitting on a list here that Trakt's copy does not have.
+        if mode["lists"] == "skip":
+            touched = listed.get("new_lists", 0)
+            discarded = 0
+        elif mode["lists"] == "merge":
+            touched = listed.get("lists", 0)
+            discarded = 0
+        else:
+            touched = listed.get("lists", 0)
+            discarded = sum(d.get("existing_count", 0)
+                            for d in listed.get("detail") or [])
         out.append({
             "key": key,
             "label": mode["label"],
@@ -345,6 +432,14 @@ def _cost_modes(categories):
             "blurb": mode["blurb"],
             "plays": plays,
             "ratings": written,
+            "lists": touched,
+            # Kept apart from `overwrites` rather than added into it. Every
+            # figure on a mode card is shown only when its category is
+            # ticked, so a single combined number would be wrong on both
+            # halves of the one case that matters: ratings ticked and lists
+            # not would still be counting list entries into "your scores
+            # replaced", and the reverse would hide the discards entirely.
+            "list_entries_removed": discarded,
             # The number worth seeing before pressing anything: how much of
             # what is already here would stop being what it is.
             "overwrites": changed,
@@ -390,6 +485,18 @@ def _unmatched_rows(staged, chosen):
                          "year": row.get("year") or "",
                          "when": row.get("rated_at") or "",
                          "detail": "rated %s" % row["rating"]})
+    if "lists" in chosen:
+        for entry in staged.get("lists") or []:
+            for row in entry["items"]:
+                if row.get("item_id"):
+                    continue
+                rows.append({"kind": "list entry", "title": row["title"],
+                             "show": row.get("show") or "",
+                             "season": row.get("season") or "",
+                             "episode": row.get("episode") or "",
+                             "year": row.get("year") or "",
+                             "when": row.get("added_at") or "",
+                             "detail": "on %s" % entry["name"]})
     return rows
 
 
@@ -482,6 +589,45 @@ def _apply_ratings(connection, rows, stamp, policy):
     return written, skipped, kept
 
 
+def _apply_lists(connection, collections, policy):
+    """Create or update lists under the mode's rule for a name clash.
+
+    Unmatched entries are written too, with their ids and title kept. A
+    list is a set of titles somebody chose, not a set of rows this server
+    happens to hold today; dropping the forty percent that are not on the
+    server yet would hand back a different list from the one imported.
+    lists.attach() picks them up as the library grows.
+    """
+    created = updated = added = skipped = removed = 0
+    for entry in collections:
+        # Re-resolved here rather than trusting what staging worked out.
+        # The staged answer was true when it was taken and can have stopped
+        # being true since - the obvious way being a list this same import
+        # created a moment ago - and finding out by way of a failed INSERT
+        # would abort a half-written import.
+        list_id = lists.find_by_name(entry["name"], connection=connection)
+        if list_id is None:
+            list_id = lists.create(entry["name"], entry.get("description"),
+                                   source="trakt", connection=connection)
+            created += 1
+        elif policy == "skip":
+            skipped += 1
+            continue
+        else:
+            if policy == "replace":
+                cursor = connection.execute(
+                    "DELETE FROM list_items WHERE list_id = ?", (list_id,))
+                removed += cursor.rowcount or 0
+            updated += 1
+        for row in entry["items"]:
+            if lists._add(connection, list_id, row):
+                added += 1
+        connection.execute("UPDATE lists SET updated_at = ? WHERE id = ?",
+                           (datetime.now().strftime(playlog.STAMP), list_id))
+    return {"created": created, "updated": updated, "skipped": skipped,
+            "entries_added": added, "entries_removed": removed}
+
+
 def commit(token, categories, mode=DEFAULT_MODE):
     """Import the chosen categories under a mode, snapshot either side.
 
@@ -535,7 +681,7 @@ def commit(token, categories, mode=DEFAULT_MODE):
 def _run_commit(token, staged, chosen, mode, rule, skip_duplicates):
     """The writing half of commit(), once the import has been claimed."""
     result = {"categories": chosen, "mode": mode, "mode_label": rule["label"],
-              "history": None, "ratings": {}}
+              "history": None, "ratings": {}, "lists": None}
     with backup.around("trakt-import") as snapshots:
         connection = library.connect()
         playlog.connect().close()          # ensure the plays schema exists
@@ -576,6 +722,11 @@ def _run_commit(token, staged, chosen, mode, rule, skip_duplicates):
                     result["ratings"][key] = {"written": written,
                                               "skipped": skipped,
                                               "kept": kept}
+                if "lists" in chosen:
+                    connection.executescript(lists.SCHEMA)
+                    result["lists"] = _apply_lists(
+                        connection, staged.get("lists") or [],
+                        rule["lists"])
         finally:
             connection.close()
     result["backups"] = snapshots

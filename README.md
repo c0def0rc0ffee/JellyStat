@@ -291,10 +291,14 @@ not reach the server.
 
 ### Importing a Trakt export
 
-**Data → Import from Trakt** takes a whole Trakt export folder. The files are
-read in the browser, classified by shape rather than by filename, and sent
-as one batch, so you select all of them and let it sort out which are watch
-history and which are ratings.
+**Data → Import from Trakt** takes the export .zip exactly as Trakt sent it.
+The archive is unpacked by the addon and its files classified by shape rather
+than by filename, so there is nothing to extract or pick out first. If you
+have already unzipped it, select the .json files instead and they are read in
+the browser the same way. Either route produces the same import.
+
+Watch history, ratings and your Trakt lists are all read; the rest of the
+export is ignored and the staging screen says how many files that was.
 
 Nothing is written until you have seen what was found. The staging screen
 reports, per category, how many records there are, how many matched your
@@ -316,8 +320,29 @@ categories to import.
 - **Where a rating exists in both places and they disagree, Trakt wins.**
   Imported ratings land in JellyStat, which is the record of what you think
   of a title; Jellyfin is expected to match it, not the other way round.
+- **Lists come across too.** Custom lists, the watchlist and the collection,
+  each named, and flagged where the name matches a list you already have.
+  What happens to those is part of the mode you pick: leave them alone, add
+  what they are missing, or replace their contents outright. Only the last
+  deletes anything, and its card counts what it would delete before you
+  press it.
 - A **backup is taken automatically immediately before and immediately
   after** every import.
+
+### Lists
+
+**Lists** in the sidebar holds sets of titles you chose. It is the one thing
+the rest of the addon has no way to express, since a list has no property in
+common that a query could find. Make one, name it, and add anything to it
+from a film or show page.
+
+An entry keeps the title, year and provider ids it was created with, and
+matches to a library item where one exists. So a list can name titles this
+server does not hold: an imported Trakt list still names all forty films when
+you have twenty of them, the rest are shown as not in your library rather
+than dropped, and they attach themselves if those titles ever arrive.
+**Re-check unmatched** runs that pass on demand. Lists that were ordered by
+hand keep their order.
 
 ### Jellyfin agreement
 
@@ -465,6 +490,9 @@ script.jellystat/
 ├── playlog.py           # per-sitting play log (date, time, position)
 ├── player.py            # xbmc.Player listener that feeds the play log
 ├── importer.py          # file import: parse, stage, compare, commit
+├── trakt.py             # Trakt export: read the .zip, parse, match ids
+├── trakt_import.py      # Trakt staging, import modes, commit
+├── lists.py             # named sets of titles, yours and Trakt's
 ├── service.py           # background service: dashboard + daily jobs
 └── resources/
     ├── icon.png         # addon icon
