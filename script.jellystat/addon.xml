@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.jellystat" name="JellyStat" version="0.25.0" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.25.1" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -18,7 +18,13 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.25.0
+    <news lang="en_GB">v0.25.1
+Follow-up to 0.25.0, for using the dashboard from a television.
+
+- When the dashboard is kept to this machine for want of a password, it now says so on screen instead of only in the log. Shown once when it changes, not at every restart.
+- The dashboard's login page is usable with a remote: the password box and the button now show clearly which one has focus, both are larger and easier to read across a room, and the keyboard offers a "Go" key.
+
+v0.25.0
 A correctness and safety release. Every finding from a full source audit is fixed.
 
 Viewing log

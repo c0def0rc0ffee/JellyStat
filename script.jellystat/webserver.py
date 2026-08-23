@@ -1080,18 +1080,33 @@ form { background:#181b24; border:1px solid #272b38; border-radius:14px;
 h1 { margin:0 0 4px; font-size:20px; }
 p { margin:0 0 20px; color:#9aa1b4; font-size:14px; }
 p.err { color:#ff8b8b; }
-input { width:100%; box-sizing:border-box; padding:10px 12px; font-size:15px;
+/* Sized for a remote as well as a thumb: this page is opened on a
+   television as often as on a phone, and a d-pad can only reach what it
+   can see. Both controls are full width, both are tall enough to hit
+   from across a room, and both say plainly when they hold focus - a TV
+   browser moves focus with arrow keys and draws nothing itself, so a
+   page with no focus style is a page you navigate blind. */
+input { width:100%; box-sizing:border-box; padding:14px 12px; font-size:17px;
   border-radius:8px; border:1px solid #333846; background:#0e1017;
   color:inherit; }
-button { margin-top:14px; width:100%; padding:10px; font-size:15px;
+button { margin-top:14px; width:100%; padding:14px; font-size:17px;
   border:0; border-radius:8px; background:#7c5cff; color:#fff;
   cursor:pointer; }
+input:focus, button:focus {
+  outline:3px solid #b9a6ff; outline-offset:3px; }
+button:focus, button:hover { background:#8f74ff; }
+@media (prefers-reduced-motion: no-preference) {
+  input, button { transition:outline-color .12s ease, background .12s ease; }
+}
 </style></head>
 <body><form method="post" action="/login">
 <h1>JellyStat</h1>
 <p>This dashboard is password protected.</p>
 <!--ERROR-->
-<input type="password" name="password" placeholder="Password" autofocus>
+<label for="pw" style="display:block;margin-bottom:6px;font-size:14px;
+  color:#9aa1b4">Password</label>
+<input id="pw" type="password" name="password" autofocus
+  autocomplete="current-password" enterkeyhint="go">
 <button type="submit">Open dashboard</button>
 </form></body></html>
 """
@@ -1125,7 +1140,9 @@ def start():
     port = _setting_int(addon, "web_port", DEFAULT_PORT)
     host = "0.0.0.0" if addon.getSetting("web_bind_all") != "false" \
         else "127.0.0.1"
-    if lan_refused(addon):
+    refused = lan_refused(addon)
+    _notify_lan_refused(refused)
+    if refused:
         # Asked to listen on every interface with no password set. That
         # combination hands anything on the network the whole database
         # over /api/export - every title, every viewing, every file path -
@@ -1176,6 +1193,41 @@ def stop():
     _server = None
     _thread = None
     log("Dashboard stopped")
+
+
+_lan_warned = False
+
+
+def _notify_lan_refused(refused):
+    """Say on screen that the dashboard is being kept to this machine.
+
+    The log alone was not enough. This takes away access somebody was
+    already using - the phone that opened the dashboard yesterday simply
+    stops connecting - and nobody reads kodi.log to find out why. The
+    reason and the remedy belong where they will be seen.
+
+    Once per transition into the state, not once per start: a box left
+    this way would otherwise nag at every reboot, and the moment worth
+    interrupting is the one where it changes, which is usually right after
+    somebody turns "reachable from other machines" on.
+    """
+    global _lan_warned
+    if not refused:
+        _lan_warned = False        # a later lapse is worth saying again
+        return
+    if _lan_warned:
+        return
+    _lan_warned = True
+    try:
+        import xbmcgui
+        xbmcgui.Dialog().notification(
+            "JellyStat",
+            "Dashboard is on this machine only - set a password to open "
+            "it to other devices",
+            xbmcgui.NOTIFICATION_WARNING, 7000)
+    except Exception as err:
+        # A notification that will not draw must never stop the server.
+        log("Could not show the dashboard notice: %s" % err, xbmc.LOGDEBUG)
 
 
 def lan_refused(addon=None):
