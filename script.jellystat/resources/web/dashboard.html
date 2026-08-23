@@ -150,7 +150,8 @@ nav.side button.sub::before { content: ""; }
 
 /* Now playing popup */
 #nowplaying {
-  position: fixed; right: 18px; bottom: 18px; z-index: 60; display: none;
+  position: fixed; z-index: 60; display: none;
+  right: 18px; bottom: 18px;
   width: min(370px, calc(100vw - 36px));
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 14px; padding: 11px; gap: 12px;
@@ -164,15 +165,29 @@ nav.side button.sub::before { content: ""; }
   text-transform: uppercase; letter-spacing: .06em; }
 #nowplaying .ttl { font-size: 14px; font-weight: 600; margin: 2px 0 7px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#nowplaying .bar { background: var(--panel-2); border-radius: 999px;
-  height: 4px; overflow: hidden; margin-bottom: 5px; }
-#nowplaying .bar i { display: block; height: 100%; background: var(--accent); }
 #nowplaying .foot { display: flex; justify-content: space-between;
   gap: 8px; font-size: 11.5px; color: var(--ink-dim); }
 #nowplaying .foot .pct { color: var(--ink); font-variant-numeric: tabular-nums; }
 #nowplaying .x { position: absolute; top: 6px; right: 8px; border: 0;
   background: transparent; color: var(--ink-dim); cursor: pointer;
   font-size: 15px; line-height: 1; padding: 2px 4px; }
+
+/* Where the popup sits, per device. Each class sets the edges it owns and
+   clears the opposite pair, so switching never leaves both pinned at once.
+   The centred ones translate by half their own width rather than assuming
+   one, since the popup is narrower on a phone. */
+#nowplaying.pos-br { top: auto; bottom: 18px; left: auto; right: 18px;
+  transform: none; }
+#nowplaying.pos-bl { top: auto; bottom: 18px; right: auto; left: 18px;
+  transform: none; }
+#nowplaying.pos-tr { bottom: auto; top: 18px; left: auto; right: 18px;
+  transform: none; }
+#nowplaying.pos-tl { bottom: auto; top: 18px; right: auto; left: 18px;
+  transform: none; }
+#nowplaying.pos-bc { top: auto; bottom: 18px; right: auto; left: 50%;
+  transform: translateX(-50%); }
+#nowplaying.pos-tc { bottom: auto; top: 18px; right: auto; left: 50%;
+  transform: translateX(-50%); }
 
 /* Posters */
 .poster { background: var(--panel-2); border-radius: 8px; overflow: hidden;
@@ -1019,6 +1034,13 @@ button.danger { color: var(--warn); }
         <p class="hint">Used everywhere a time of day appears.</p>
         <div class="tabs" id="pref-clock"></div>
       </div>
+
+      <div class="prefrow">
+        <h3>Now playing popup</h3>
+        <p class="hint">Where the popup appears while something is
+          playing.</p>
+        <div class="tabs" id="pref-npposition"></div>
+      </div>
     </section>
 
     <section class="panel">
@@ -1111,6 +1133,15 @@ const DATE_FORMATS = {
   long: { label: "20 Aug 2026" },
 };
 const CLOCKS = { h24: { label: "21:40" }, h12: { label: "9:40 pm" } };
+/* Where the now-playing popup sits. Keys are the CSS class suffix. */
+const NP_POSITIONS = {
+  br: { label: "Bottom right" },
+  bc: { label: "Bottom centre" },
+  bl: { label: "Bottom left" },
+  tr: { label: "Top right" },
+  tc: { label: "Top centre" },
+  tl: { label: "Top left" },
+};
 const REC_MODES = {
   new:  { label: "Only ones I have not seen" },
   both: { label: "Seen and new" },
@@ -1119,13 +1150,14 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 let PREFS = { dateFormat: "iso", clock: "h24",
-              recMovies: "new", recTv: "new" };
+              recMovies: "new", recTv: "new", npPosition: "br" };
 try {
   const saved = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
   if (DATE_FORMATS[saved.dateFormat]) PREFS.dateFormat = saved.dateFormat;
   if (CLOCKS[saved.clock]) PREFS.clock = saved.clock;
   if (REC_MODES[saved.recMovies]) PREFS.recMovies = saved.recMovies;
   if (REC_MODES[saved.recTv]) PREFS.recTv = saved.recTv;
+  if (NP_POSITIONS[saved.npPosition]) PREFS.npPosition = saved.npPosition;
 } catch (err) { /* corrupted storage: defaults are fine */ }
 
 /* The seen/new choice for one medium, as the query flag the API wants. */
@@ -2037,6 +2069,7 @@ function renderSettings() {
     ["pref-clock", CLOCKS, "clock"],
     ["pref-recmovies", REC_MODES, "recMovies"],
     ["pref-rectv", REC_MODES, "recTv"],
+    ["pref-npposition", NP_POSITIONS, "npPosition"],
   ];
   groups.forEach(([hostId, options, key]) => {
     const host = $(hostId);
@@ -2053,6 +2086,12 @@ function renderSettings() {
 }
 
 function applyPrefs() {
+  /* A popup already on screen moves straight away rather than waiting for
+     the next poll, so picking a position shows its effect immediately. */
+  const np = $("nowplaying");
+  if (np && np.classList.contains("show")) {
+    np.className = "show pos-" + PREFS.npPosition;
+  }
   /* Re-render everything that shows a date or time. Cheap: it is all
      client-side formatting of data already in memory. */
   if (SCREEN) renderScreenTime();
@@ -3168,7 +3207,6 @@ function npProgress() {
 function paintNowPlaying() {
   const now = npProgress();
   if (!now) return;
-  npLive.fill.style.width = now.percent + "%";
   const left = Math.round(now.remaining / 60);
   npLive.left.textContent = left ? left + "m left" : "finishing";
   npLive.pct.textContent = Math.round(now.percent) + "%";
@@ -3199,10 +3237,8 @@ function renderNowPlaying(state) {
     title.textContent = state.title;
   }
   body.append(title);
-  const bar = el("div", { class: "bar" });
-  const fill = el("i");
-  bar.append(fill);
-  body.append(bar);
+  /* No progress bar: a 4px sliver could only ever say "roughly here",
+     while the percentage beside it is exact and already on the row. */
   const foot = el("div", { class: "foot" });
   const leftText = el("span", {});
   const pctText = el("span", { class: "pct" });
@@ -3211,7 +3247,7 @@ function renderNowPlaying(state) {
   body.append(foot);
   box.append(body);
 
-  npLive = { state: state, at: Date.now(), fill: fill, left: leftText,
+  npLive = { state: state, at: Date.now(), left: leftText,
              pct: pctText, ends: endsText };
   paintNowPlaying();
   if (!npTick) npTick = setInterval(paintNowPlaying, 1000);
@@ -3223,7 +3259,7 @@ function renderNowPlaying(state) {
     renderNowPlaying(null);
   });
   box.append(close);
-  box.className = "show";
+  box.className = "show pos-" + PREFS.npPosition;
 }
 
 async function pollNowPlaying() {
