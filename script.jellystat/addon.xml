@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.jellystat" name="JellyStat" version="0.25.1" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.25.2" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -18,7 +18,14 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.25.1
+    <news lang="en_GB">v0.25.2
+Fixes for the duplicate-copy feature, which was quietly failing on most of the films it flagged.
+
+- A film held twice now says so on its own page even if you have never watched it. The library list counted copies across the whole server while the film's page counted only what had been played, so every duplicate nobody had watched was tagged in the list and then denied on the page it opened. A watched film whose second copy had never been played was missing that copy too.
+- The file details in the duplicate note now load. The path, size and quality of each copy - the whole point of the note, since they are what tells you which copy to delete - were asked for down a route that does not exist, so every copy reported that it could not be read, on a page already showing that same file's size in its header.
+- The library list lines up. Rows you had watched carried a "Dates" button and rows you had not did not, which pushed the year, rating and play counts of a watched row a button's width to the left of every other row.
+
+v0.25.1
 Follow-up to 0.25.0, for using the dashboard from a television.
 
 - When the dashboard is kept to this machine for want of a password, it now says so on screen instead of only in the log. Shown once when it changes, not at every restart.

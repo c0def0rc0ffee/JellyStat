@@ -798,6 +798,49 @@ def similar(media, item_id=None, name=None, include_seen=True,
 # Detail for titles the mirror does not hold
 # ---------------------------------------------------------------------------
 
+def copies_of(media, item_id, name, year):
+    """Every other entry in the library that is the same film as this one.
+
+    The list page counts copies over browse's rows, which are the mirror
+    and the catalog merged; the item page used to count them over the
+    mirror alone. The mirror holds only what has been played, so every
+    duplicate nobody had watched was tagged "x2 copies" in the list and
+    then opened onto a page that said nothing about a second copy at all -
+    and a watched film whose twin had never been played lost the twin.
+    One question, one answer, both places.
+    """
+    connection = library.connect()
+    try:
+        out = library.duplicates_of(connection, item_id, name, year,
+                                    media=media)
+    finally:
+        connection.close()
+    key = library.dupe_key(name, year)
+    known = {row["id"] for row in out}
+    known.add(item_id)
+    try:
+        movies, series = catalog()
+    except core.JellyStatError:
+        return out          # offline: the mirror's answer is the only one
+    for item in (movies if media == "movie" else series):
+        if item.get("Id") in known:
+            continue
+        if library.dupe_key(item.get("Name"),
+                            item.get("ProductionYear")) != key:
+            continue
+        user_data = item.get("UserData") or {}
+        out.append({
+            "id": item.get("Id"), "name": item.get("Name") or "?",
+            "year": item.get("ProductionYear"),
+            "play_count": user_data.get("PlayCount") or 0,
+            # Dates and scores live in the mirror; a copy known only to
+            # the catalog has none, and guessing at them would be worse
+            # than the dash the note already draws.
+            "last_played": None, "user_rating": None,
+        })
+    return out
+
+
 def catalog_detail(media, item_id=None, name=None):
     """A title's details straight from the catalog, watched or not.
 
@@ -839,4 +882,10 @@ def catalog_detail(media, item_id=None, name=None):
         "avg_rating": None,
         "seasons": [],
         "episodes": [],
+        # Unwatched is exactly the case the mirror cannot answer, and
+        # exactly where the duplicates the list flags mostly are.
+        "duplicates": copies_of(media, target.get("Id"),
+                                target.get("Name"),
+                                target.get("ProductionYear"))
+                      if media == "movie" else [],
     }

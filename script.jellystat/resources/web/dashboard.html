@@ -522,8 +522,14 @@ a.action:hover { background: var(--panel-2); }
   color: var(--ink-dim); font-size: 12.5px; text-align: right;
   font-variant-numeric: tabular-nums; }
 .librow .mine { color: #f4c542; }
-.libline { display: grid; grid-template-columns: 1fr auto;
+/* The Dates column is a fixed width, present on every row whether or not
+   that row has a button to put in it: sized to its content it existed only
+   on watched rows, so the year, rating and play counts of a watched row sat
+   a button's width to the left of an unwatched one and nothing in the list
+   lined up. */
+.libline { display: grid; grid-template-columns: minmax(0, 1fr) 66px;
   align-items: center; gap: 6px; }
+.libline .whenbtn { width: 100%; text-align: center; padding: 4px 0; }
 .libline .whenbox { grid-column: 1 / -1; display: none; }
 .libline .whenbox.open { display: block; background: var(--bg);
   border-radius: 8px; padding: 9px 12px; margin: 2px 0 8px;

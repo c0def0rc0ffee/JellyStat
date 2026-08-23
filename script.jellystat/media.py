@@ -128,15 +128,29 @@ def files(item_id):
     community-rating write needs) and falls back to the ordinary user
     token. Where the path is withheld, everything else is still returned
     and the caller says so rather than showing a blank.
+
+    The key is asked over /Items with an Ids filter, not /Items/{id}: there
+    is no per-item route outside /Users, and asking for one failed every
+    time, which the duplicate note reported as "could not be asked for this
+    file" on a page already showing that file's size in its header. A key
+    that is wrong or refused falls through to the user token as well, since
+    a copy listed without its path still compares by size and quality.
     """
     if not valid_id(item_id):
         raise MediaError("Not a Jellyfin id.")
     creds = core.get_credentials()
     params = {"Fields": "MediaSources,Path"}
+    item = None
     base, key = _admin_credentials()
     if base and key:
-        item = core.api_get(base, key, "/Items/%s" % item_id, params)
-    else:
+        try:
+            found = core.api_get(base, key, "/Items",
+                                 dict(params, Ids=item_id, Recursive="true"))
+            item = (found.get("Items") or [None])[0]
+        except Exception as err:
+            log("API key could not read %s, using the user token: %s"
+                % (item_id, err), xbmc.LOGDEBUG)
+    if item is None:
         item = core.api_get(creds["base"], creds["token"],
                             "/Users/%s/Items/%s" % (creds["user_id"],
                                                     item_id), params)

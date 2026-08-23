@@ -200,7 +200,9 @@
              version ever declines to keep it the snapshot would be re-sent
              on every five-minute service beat. -->
         <setting id="last_send_date" type="string" label="32022">
-          <level>4</level>
+          <!-- 3 is Expert, the highest level Kodi defines; it is hidden
+               outright below in any case. -->
+          <level>3</level>
           <default></default>
           <constraints>
             <allowempty>true</allowempty>

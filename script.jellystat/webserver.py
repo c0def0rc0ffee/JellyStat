@@ -690,6 +690,7 @@ class Handler(BaseHTTPRequestHandler):
                   else library.show_detail(name))
         if detail is not None:
             detail["watched"] = True
+            self._attach_copies(detail, media)
             self._attach_artwork(detail, media)
             self._send_json(200, detail)
             return
@@ -704,6 +705,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._attach_artwork(detail, media)
         self._send_json(200, detail)
+
+    def _attach_copies(self, detail, media):
+        """Widen the mirror's list of copies to the catalog's, never failing.
+
+        movie_detail asks the mirror, which holds only what has been
+        played, so a copy that has never been watched is invisible to it -
+        while the list page, counting over the catalog too, has already
+        told the user the film is held twice. Asking again here keeps the
+        two pages telling the same story.
+        """
+        if media != "movie":
+            return
+        try:
+            detail["duplicates"] = recommend.copies_of(
+                media, detail.get("id"), detail.get("name"),
+                detail.get("year"))
+        except Exception as err:
+            log("No copy list for %s: %s" % (detail.get("id"), err),
+                xbmc.LOGDEBUG)
 
     def _attach_artwork(self, detail, media):
         """Fold live Jellyfin detail into a page payload, never failing it.
