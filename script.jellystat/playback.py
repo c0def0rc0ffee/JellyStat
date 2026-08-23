@@ -24,13 +24,18 @@ import time
 import xbmc
 
 INDEX_TTL_S = 900
+
+# How often a lookup that finds nothing may force a rebuild. A miss is
+# usually an item Kodi genuinely no longer has, and rebuilding for each
+# one turns a stale button into a library sweep per click.
+MISS_REBUILD_S = 60
 VIDEO_PLAYLIST = 1
 
 # The Jellyfin item id as Jellyfin for Kodi writes it into the file path.
 ID_IN_PATH = re.compile(r"[?&]id=([0-9a-f]{32})", re.I)
 
 _lock = threading.Lock()
-_index = {"at": 0.0, "map": None}
+_index = {"at": 0.0, "map": None, "rebuilt_on_miss": 0.0}
 
 
 def log(message, level=xbmc.LOGINFO):
@@ -92,12 +97,24 @@ def resolve(item_id):
 
     Retries with a fresh index once, so something added to the library since
     the last build still plays rather than reporting "not in the library".
+
+    That retry is rate-limited. A miss is usually permanent - an item the
+    mirror still lists but Kodi no longer has - and rebuilding costs two
+    full JSON-RPC sweeps of the library while holding the module lock. One
+    stale button on the dashboard could otherwise start that sweep on every
+    press, stalling every other playback request behind it.
     """
     key = (item_id or "").lower()
     entry = index().get(key)
-    if entry is None:
-        entry = index(force=True).get(key)
-    return entry
+    if entry is not None:
+        return entry
+    with _lock:
+        due = (time.time() - _index["rebuilt_on_miss"]) >= MISS_REBUILD_S
+        if due:
+            _index["rebuilt_on_miss"] = time.time()
+    if not due:
+        return None
+    return index(force=True).get(key)
 
 
 def _rpc_item(entry):
@@ -231,9 +248,14 @@ def status():
     players = rpc("Player.GetActivePlayers")
     queued = len(rpc("Playlist.GetItems",
                      {"playlistid": VIDEO_PLAYLIST}).get("items") or [])
-    if not players:
+    # The video player, not merely the first active one. Music reported as
+    # a film with the song's title, and a picture slideshow has no "time"
+    # or "totaltime" to ask for at all - that raised, and the dashboard
+    # said the player had failed when it was showing holiday photos.
+    video = next((p for p in players if p.get("type") == "video"), None)
+    if not video:
         return {"playing": False, "queued": queued}
-    player_id = players[0]["playerid"]
+    player_id = video["playerid"]
     item = rpc("Player.GetItem", {
         "playerid": player_id,
         "properties": ["title", "season", "episode", "showtitle", "file",

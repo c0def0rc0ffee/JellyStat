@@ -39,9 +39,11 @@ being called disliked when they are merely unknown.
 Similarity is genre overlap (Jaccard) plus a small closeness-in-year bonus
 and a small rating tiebreak.
 
-"Seen" for a film is Jellyfin's Played flag; for a show it is "any episode
-in the mirror". Callers choose whether seen titles are included - that
-choice is the dashboard's per-medium setting.
+"Seen" is read from the mirror for both: a film with a play recorded, a
+show with any watched episode. Both are therefore as current as the last
+sync, rather than a film lagging behind the hourly catalog cache while a
+show updated immediately. Callers choose whether seen titles are included -
+that choice is the dashboard's per-medium setting.
 
 If Jellyfin is unreachable the catalog cannot refresh; with include_seen
 the mirror alone still yields (rewatch) suggestions, otherwise the caller
@@ -239,6 +241,23 @@ def watched_shows():
             for _, _, name in _mirror_rows("episode") if name}
 
 
+def watched_movies():
+    """Ids of every film the mirror records as watched.
+
+    Read live, like watched_shows above. Film seen-status used to come from
+    the hour-long catalog cache instead, so with "hide seen" on, a film
+    watched tonight kept turning up for up to an hour while a show watched
+    the same evening vanished at once - the same setting behaving two ways
+    depending on what you had put on.
+    """
+    connection = library.connect()
+    rows = connection.execute(
+        "SELECT id FROM items WHERE media = 'movie' AND play_count > 0"
+    ).fetchall()
+    connection.close()
+    return {row[0] for row in rows if row[0]}
+
+
 # ---------------------------------------------------------------------------
 # Recommendations
 # ---------------------------------------------------------------------------
@@ -261,7 +280,14 @@ def _entry(item, seen, score, match, view, covered):
     }
 
 
-def _seen_movie(item):
+def _seen_movie(item, watched=None):
+    """Whether a film has been watched.
+
+    `watched` is the live set from the mirror; the catalog's own Played
+    flag is the fallback for when there is no mirror to ask.
+    """
+    if watched is not None:
+        return item.get("Id") in watched
     return bool((item.get("UserData") or {}).get("Played"))
 
 
@@ -293,7 +319,9 @@ def recommendations(media, include_seen, limit=RECOMMEND_LIMIT, offset=0,
     try:
         movies, series = catalog()
         if media == "movies":
-            candidates = [(item, _seen_movie(item)) for item in movies]
+            seen_ids = watched_movies()
+            candidates = [(item, _seen_movie(item, seen_ids))
+                          for item in movies]
         else:
             seen_set = watched_shows()
             candidates = [(item, (item.get("Name") or "").strip().lower()
@@ -478,15 +506,23 @@ def search(term, limit=25):
     A server that cannot be reached is not an error: the mirror's answer is
     still a true answer, just a narrower one.
     """
-    hits = library.search(term, limit)
     needle = (term or "").strip().lower()
     if not needle:
-        return hits
+        return library.search(term, limit)
     try:
         movies, series = catalog()
     except core.JellyStatError:
+        hits = library.search(term, limit)
         hits["partial"] = True     # watched titles only; server unreachable
         return hits
+
+    # Every mirror match, not the top `limit` of them. The catalog merge
+    # below skips whatever the mirror already knows, and it can only skip
+    # what it can see: a watched film that ranked just outside the cut was
+    # invisible here, so it came back from the catalog marked never
+    # watched - and then outranked by the seen titles it should have sat
+    # among. The final ranking applies the limit anyway.
+    hits = library.search(term, limit=None)
 
     known = {(movie.get("id") or "") for movie in hits["movies"]}
     seen_shows = {(show["name"] or "").strip().lower()
@@ -565,8 +601,17 @@ def browse(media, limit=48, offset=0, genres=None, exclude=None,
         seen_keys[key] = seen_keys.get(key, 0) + 1
     for row in rows:
         row["copies"] = seen_keys[library.dupe_key(row["name"], row["year"])]
-        row["genres"] = [core.canonical_genre(g) for g in row["genres"]] \
-            or ["Unknown"]
+        # effective_genres, not canonical_genre per label: a label like
+        # "Sci-Fi & Fantasy" stands for two genres and both of them count.
+        # Reducing each to its first dropped Fantasy from every watched
+        # show carrying that label, while the unwatched titles merged in
+        # from the catalog above went through effective_genres and kept
+        # both - so one title answered a Fantasy filter differently
+        # depending on whether it had been seen. It also dedupes, which
+        # mapping did not: a title tagged "Sci-Fi" and "Science Fiction"
+        # counted that genre twice in the tally below. ["Unknown"] for an
+        # empty list comes from effective_genres itself.
+        row["genres"] = core.effective_genres({"Genres": row["genres"]})
 
     kept = [row for row in rows if _shown(row, show)]
     kept = _narrow(kept, genres, exclude, year_from, year_to, rating_min)
@@ -712,7 +757,8 @@ def similar(media, item_id=None, name=None, include_seen=True,
         series = _mirror_as_items("tv")
         offline = True
     if media == "movie":
-        pool = [(item, _seen_movie(item) if not offline else True)
+        seen_ids = None if offline else watched_movies()
+        pool = [(item, True if offline else _seen_movie(item, seen_ids))
                 for item in movies]
         target = next((item for item, _ in pool
                        if item.get("Id") == item_id), None)
@@ -740,7 +786,10 @@ def similar(media, item_id=None, name=None, include_seen=True,
         score = _similarity(target_genres, target_year, item)
         if score <= 0:
             continue
-        scored.append(_entry(item, seen, score))
+        # Similarity to one title is the whole claim here, so it stands as
+        # the match. Nothing about your ratings enters into it, so there is
+        # no opinion to report rather than a neutral-looking zero.
+        scored.append(_entry(item, seen, score, score, 0.0, False))
     scored.sort(key=lambda entry: (-entry["score"], entry["name"]))
     return {"items": scored[:limit], "offline": offline}
 

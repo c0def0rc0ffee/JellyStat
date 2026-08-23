@@ -193,6 +193,23 @@
     </category>
     <category id="website" label="32020">
       <group id="1" label="32021">
+        <!-- Written by the addon, never shown: which day's snapshot has
+             already gone out, so a restart does not send a second one.
+             Declared here because setSetting on an undeclared id relies on
+             Kodi's undocumented handling of unknown settings, and if a
+             version ever declines to keep it the snapshot would be re-sent
+             on every five-minute service beat. -->
+        <setting id="last_send_date" type="string" label="32022">
+          <level>4</level>
+          <default></default>
+          <constraints>
+            <allowempty>true</allowempty>
+          </constraints>
+          <control type="label" format="string">
+            <heading>32022</heading>
+          </control>
+          <visible>false</visible>
+        </setting>
         <setting id="endpoint_url" type="string" label="32022">
           <level>0</level>
           <default></default>

@@ -25,11 +25,13 @@ the staging screen can show exactly what would happen first.
 """
 
 import re
+from datetime import datetime
 
 import xbmc
 
 import library
 import main as core
+import playlog
 
 # Trakt's own words for how a play was recorded. A scrobble came from a
 # player reporting progress in real time; a "watch" is usually a backfill,
@@ -50,8 +52,23 @@ def norm(text):
 
 
 def _stamp(value):
-    """Trakt sends UTC ISO8601 with a Z; the play log stores local time."""
-    return (value or "")[:19].replace("T", " ") or None
+    """Trakt's UTC ISO8601 as the local timestamp the play log stores.
+
+    Trakt sends UTC with a trailing Z. The play log is local wall time
+    throughout, so the conversion belongs here, where Trakt's data enters
+    the addon, rather than in each of the things that later read it.
+
+    Anything that is not a full date and time is refused. A bare date used
+    to be passed along and then brought the whole commit down when it was
+    parsed strictly hours later; a row nobody can place in time is one row
+    to skip, not an import to lose.
+    """
+    raw = (value or "").strip()[:19]
+    try:
+        utc = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return None
+    return playlog.to_local(utc).strftime(playlog.STAMP)
 
 
 # ---------------------------------------------------------------------------
@@ -255,21 +272,38 @@ def enrich_from_server(sessions, index, progress=None):
     Two cheap queries cover it. The whole film catalogue comes back in one
     request, and each show that still has unmatched episodes is fetched
     once. Nothing is written; this only fills in item ids and runtimes.
+
+    Best-effort throughout. Matching against the mirror has already run and
+    its results stand; everything here only fills gaps. So a server that is
+    down, or was never configured, costs the import the extra matches and
+    nothing else - it does not fail an import that needed no server to
+    begin with. The episode lookups were already written that way; the
+    credentials and the film catalogue were not, and one unreachable
+    server threw the whole staging away after the local work had succeeded.
     """
     outstanding = [s for s in sessions if not s.get("item_id")]
     if not outstanding:
         return {"movies_found": 0, "episodes_found": 0}
-    creds = core.get_credentials()
+    try:
+        creds = core.get_credentials()
+    except Exception as err:
+        log("Skipping the server lookups: %s" % err, xbmc.LOGWARNING)
+        return {"movies_found": 0, "episodes_found": 0}
     found_movies = found_episodes = 0
 
     if any(s["media"] == "movie" for s in outstanding):
         if progress:
             progress("Looking up films on the server")
-        catalogue = core.api_get(
-            creds["base"], creds["token"],
-            "/Users/%s/Items" % creds["user_id"],
-            {"IncludeItemTypes": "Movie", "Recursive": "true",
-             "Fields": "ProviderIds,ProductionYear"}).get("Items") or []
+        try:
+            catalogue = core.api_get(
+                creds["base"], creds["token"],
+                "/Users/%s/Items" % creds["user_id"],
+                {"IncludeItemTypes": "Movie", "Recursive": "true",
+                 "Fields": "ProviderIds,ProductionYear"}).get("Items") or []
+        except Exception as err:
+            log("Could not read the film catalogue: %s" % err,
+                xbmc.LOGWARNING)
+            catalogue = []
         by_imdb, by_tmdb, by_title = {}, {}, {}
         for item in catalogue:
             ids = item.get("ProviderIds") or {}

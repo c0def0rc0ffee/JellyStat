@@ -106,9 +106,23 @@ def log(message, level=xbmc.LOGINFO):
 _schema_done = False
 
 
+def _ulower(value):
+    """Python's lowercase, for SQL to use.
+
+    SQLite's own LOWER() only touches A-Z, but every parameter compared
+    against it here was lowercased in Python, which folds the whole of
+    Unicode. So "ELITE" matched and "\u00c9LITE" did not: its show page fell
+    through to the catalog, its sittings list came back empty, search could
+    not find it, and - worst of the four - the duplicate check missed, so
+    every sync logged another play for it.
+    """
+    return (value or "").lower()
+
+
 def connect():
     global _schema_done
     connection = sqlite3.connect(history.db_path(), timeout=10)
+    connection.create_function("ULOWER", 1, _ulower)
     if not _schema_done:
         connection.executescript(SCHEMA)
         for statement in RATING_COLUMNS:
@@ -209,13 +223,13 @@ def _known_session(connection, row, played_local):
     hi = (played_local + timedelta(hours=DEDUP_HOURS)).strftime(
         "%Y-%m-%dT%H:%M:%S")
     hit = connection.execute(
-        "SELECT 1 FROM plays WHERE LOWER(COALESCE(show, '')) = ? "
-        "AND LOWER(title) = ? AND started_at BETWEEN ? AND ? LIMIT 1",
+        "SELECT 1 FROM plays WHERE ULOWER(COALESCE(show, '')) = ? "
+        "AND ULOWER(title) = ? AND started_at BETWEEN ? AND ? LIMIT 1",
         (show, title, lo, hi)).fetchone()
     return hit is not None
 
 
-def _infer_play(connection, row, utc_offset, now):
+def _infer_play(connection, row, utc_offset):
     """Record a change-detected play with Jellyfin's own timestamp."""
     import main as core
     played = core.parse_played_date(row["last_played"])
@@ -287,15 +301,34 @@ def sync(movies, episodes, series_genres, utc_offset, series=None):
         # playlog owns the plays table; make sure it exists before we write.
         playlog.connect().close()
         with connection:
-            seen_ids = []
             groups = [("movie", movies), ("episode", episodes)]
             if series:
                 groups.append(("series", series))
+            # Everything is marked absent up front and the upserts below
+            # mark back whatever Jellyfin still has, which leaves exactly
+            # the vanished rows at zero. (Items that vanished stay in the
+            # mirror - that is the point of having one - but are flagged so
+            # a future feature can distinguish them.)
+            #
+            # The obvious spelling, one "NOT IN (?, ?, ...)" listing every
+            # id seen, bound one SQL variable per item, and SQLite caps
+            # those - at 999 on the builds some older Kodis ship. Past the
+            # cap it raised inside this transaction and rolled the entire
+            # sync back: no upserts, no inferred plays, no adopted ratings,
+            # and nothing to show for it but a line in the log. A mirror
+            # that silently stops updating is the worst outcome available
+            # here, and it began exactly when a library grew big enough to
+            # matter. Nothing below binds a variable per item.
+            #
+            # Not keyed on this run's timestamp either: two syncs in the
+            # same second share it to the second, and the later one would
+            # then flag nothing at all.
+            if any(items for _, items in groups):
+                connection.execute("UPDATE items SET present = 0")
             for media, items in groups:
                 for item in items:
                     row = (_series_row(item) if media == "series"
                            else _row_from(item, media, series_genres))
-                    seen_ids.append(row["id"])
                     old = connection.execute(
                         "SELECT play_count, last_played, user_rating, "
                         "rating_sync FROM items WHERE id = ?",
@@ -315,7 +348,12 @@ def sync(movies, episodes, series_genres, utc_offset, series=None):
                             ":tmdb_id, :tvdb_id, '%s', '%s', 1)"
                             % (stamp, stamp),
                             row)
-                        if row["jf_rating"]:
+                        # "is not None", not truthiness: a Jellyfin score
+                        # of 0 is an opinion, and dropping it here while
+                        # _adopt_rating would have taken it made the same
+                        # item rated or unrated depending only on whether
+                        # the mirror had seen it before.
+                        if row["jf_rating"] is not None:
                             connection.execute(
                                 "UPDATE items SET user_rating = ?, "
                                 "jf_rating = ?, "
@@ -327,7 +365,7 @@ def sync(movies, episodes, series_genres, utc_offset, series=None):
                     changed = (row["last_played"] or "") != (old[1] or "")
                     if media != "series" and changed and row["last_played"] \
                             and row["last_played"] > (old[1] or ""):
-                        if _infer_play(connection, row, utc_offset, now):
+                        if _infer_play(connection, row, utc_offset):
                             inferred += 1
                     if _adopt_rating(connection, row, old):
                         adopted += 1
@@ -345,14 +383,6 @@ def sync(movies, episodes, series_genres, utc_offset, series=None):
                         "present = 1 WHERE id = :id" % stamp, row)
                     if changed or int(row["play_count"]) != int(old[0] or 0):
                         updated += 1
-            # Items that vanished from Jellyfin stay in the mirror - that is
-            # the point of having one - but are flagged so a future feature
-            # can distinguish them.
-            if seen_ids:
-                marks = ",".join("?" * len(seen_ids))
-                connection.execute(
-                    "UPDATE items SET present = 0 WHERE id NOT IN (%s)"
-                    % marks, seen_ids)
         connection.close()
         if added or inferred or adopted:
             log("Mirror sync: %d new items, %d updated, %d plays detected "
@@ -483,7 +513,10 @@ def search(term, limit=25):
     likely to be searching for, and for a long time it could not be found
     at all.
 
-    Shows are grouped from their episodes.
+    Shows are grouped from their episodes. `limit` of None returns every
+    match: the caller that merges the unwatched side in has to see all of
+    them to know what it would be duplicating, and does its own ranking
+    and cutting afterwards.
     """
     if not (term or "").strip():
         return {"movies": [], "shows": []}
@@ -494,7 +527,7 @@ def search(term, limit=25):
         "last_played": row[4], "play_count": row[5], "seen": True,
     } for row in connection.execute(
         "SELECT id, name, year, rating, last_played, play_count FROM items "
-        "WHERE media = 'movie' AND LOWER(name) LIKE ? ESCAPE '\\'",
+        "WHERE media = 'movie' AND ULOWER(name) LIKE ? ESCAPE '\\'",
         (pattern,))]
     shows = [{
         "name": row[0], "episodes": row[1], "last_played": row[2],
@@ -502,7 +535,7 @@ def search(term, limit=25):
     } for row in connection.execute(
         "SELECT series_name, COUNT(*), MAX(last_played) FROM items "
         "WHERE media = 'episode' AND series_name IS NOT NULL "
-        "AND LOWER(series_name) LIKE ? ESCAPE '\\' "
+        "AND ULOWER(series_name) LIKE ? ESCAPE '\\' "
         "GROUP BY series_name", (pattern,))]
     connection.close()
     return {"movies": rank_hits(movies, term, limit),
@@ -524,14 +557,25 @@ def rank_hits(hits, term, limit):
     return hits[:limit]
 
 
-def _sittings(connection, show, title=None):
-    """Play-log rows for one film or one whole show, newest first."""
+def _sittings(connection, show, title=None, year=None):
+    """Play-log rows for one film or one whole show, newest first.
+
+    A film is matched on year as well as title where one is known. Title
+    alone pooled the viewing history of same-name remakes - Dune 1984 and
+    Dune 2021 each showed the union of both - which is the very confusion
+    the duplicates feature elsewhere exists to point out. Rows logged
+    without a year still match, since dropping them would lose real
+    sittings to fix a rarer complaint.
+    """
     if title is not None:
-        where = ("LOWER(COALESCE(show, '')) = '' AND LOWER(title) = ? "
+        where = ("ULOWER(COALESCE(show, '')) = '' AND ULOWER(title) = ? "
                  "AND media = 'movie'")
         params = [(title or "").strip().lower()]
+        if year:
+            where += " AND (year = ? OR year IS NULL)"
+            params.append(year)
     else:
-        where = "LOWER(COALESCE(show, '')) = ?"
+        where = "ULOWER(COALESCE(show, '')) = ?"
         params = [(show or "").strip().lower()]
     return [{
         "started_at": row[0], "ended_at": row[1], "title": row[2],
@@ -652,7 +696,8 @@ def movie_detail(item_id):
         "rating": row[4], "critic": row[5], "favourite": bool(row[6]),
         "play_count": row[7], "last_played": row[8], "first_seen": row[9],
         "present": bool(row[10]),
-        "sittings": _sittings(connection, None, title=row[1]),
+        "sittings": _sittings(connection, None, title=row[1],
+                              year=row[2]),
     }
     detail["duplicates"] = duplicates_of(connection, row[0], row[1], row[2])
     connection.close()
@@ -665,7 +710,7 @@ def show_detail(name):
     rows = connection.execute(
         "SELECT name, season, episode, rating, play_count, last_played, "
         "genres, present, series_id, id FROM items WHERE media = 'episode' "
-        "AND LOWER(series_name) = ? "
+        "AND ULOWER(series_name) = ? "
         "ORDER BY last_played DESC",
         ((name or "").strip().lower(),)).fetchall()
     if not rows:

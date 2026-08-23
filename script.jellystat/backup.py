@@ -60,23 +60,66 @@ def create(when="before", reason="import", now=None):
     Never raises: failing to back up is worth reporting loudly, but it is
     the caller's decision whether that should stop the operation, and for a
     restore-from-file it obviously must not.
+
+    Written under a name nothing here will match, and moved into place only
+    once it is complete. Connecting straight to the final name would create
+    that file the moment the copy began, so a failure part-way - a full
+    disk, a source locked past the timeout, the power going - left a
+    truncated database sitting there under a perfectly good name: listed as
+    a backup, offered for download, and counted against KEEP, where it
+    could evict the last copy that actually worked. A decoy restore point
+    is worse than no restore point, because the mistake it is supposed to
+    undo has usually already been made by the time anyone opens it.
     """
     now = now or datetime.now()
     name = "jellystat-%s-%s-%s.db" % (now.strftime("%Y%m%d-%H%M%S"),
                                       when, _slug(reason))
     target = os.path.join(folder(), name)
+    # NAME_RE requires the name to end at ".db", so a leftover ".partial"
+    # is invisible to listing(), prune() and path_of() alike.
+    partial = target + ".partial"
+    source = copy = None
+    done = False
     try:
         source = sqlite3.connect(history.db_path(), timeout=30)
-        copy = sqlite3.connect(target)
+        copy = sqlite3.connect(partial)
         with copy:
             source.backup(copy)
-        copy.close()
-        source.close()
+        done = True
     except Exception as err:
         log("Could not take the %s backup: %s" % (when, err), xbmc.LOGERROR)
+    finally:
+        # Closed before the file is moved or removed: an open handle stops
+        # either on Windows, and would leak on every failure elsewhere.
+        for handle in (copy, source):
+            try:
+                if handle is not None:
+                    handle.close()
+            except Exception:
+                pass
+    if done:
+        try:
+            os.replace(partial, target)
+        except OSError as err:
+            log("Could not put the %s backup in place: %s" % (when, err),
+                xbmc.LOGERROR)
+            done = False
+    if not done:
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
         return None
-    prune()
-    size = os.path.getsize(target)
+    # Guarded: this module promises never to raise, and pruning reads names
+    # out of a directory anything at all could have dropped a file into.
+    try:
+        prune()
+    except Exception as err:
+        log("Could not prune old backups: %s" % err, xbmc.LOGWARNING)
+    try:
+        size = os.path.getsize(target)
+    except OSError:
+        size = 0
     log("Backup %s %s: %s (%.1f MB)"
         % (when, reason, name, size / 1048576.0))
     return {"name": name, "when": when, "reason": reason,
@@ -100,12 +143,22 @@ def listing():
             size = os.path.getsize(path)
         except OSError:
             continue
+        # The pattern proves the digits are digits, not that they are a
+        # date: "20261399-256199" matches it and is not a moment in time.
+        # One such name used to raise out of here, through prune(), into
+        # create() and on into every import - a single stray file could
+        # stop the backups page and block importing entirely.
+        try:
+            taken_at = datetime.strptime(stamp, "%Y%m%d-%H%M%S")
+        except ValueError:
+            log("Ignoring a backup with an impossible date: %s" % name,
+                xbmc.LOGWARNING)
+            continue
         out.append({
             "name": name,
             "when": when,
             "reason": reason,
-            "taken_at": datetime.strptime(stamp, "%Y%m%d-%H%M%S").strftime(
-                "%Y-%m-%dT%H:%M:%S"),
+            "taken_at": taken_at.strftime("%Y-%m-%dT%H:%M:%S"),
             "bytes": size,
         })
     out.sort(key=lambda row: row["taken_at"], reverse=True)

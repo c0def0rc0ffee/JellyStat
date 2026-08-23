@@ -44,10 +44,6 @@ import main as core
 
 ADDON_ID = "script.jellystat"
 
-# At or above this, a score is a thumbs up to Jellyfin; below it, thumbs
-# down. Six out of ten is the usual "I did not regret it" line.
-LIKE_THRESHOLD = 6.0
-
 # At or above this, the item is also marked a favourite (opt-in setting).
 FAVOURITE_THRESHOLD = 9.0
 
@@ -273,6 +269,20 @@ def _push_community_rating(item_id, score):
     return "community rating written"
 
 
+def _why(err):
+    """A short reason a write was refused, for a warning line."""
+    if getattr(err, "code", None) == 403:
+        return "403 - the key is not an administrator key"
+    return str(err)
+
+
+def _same_score(one, other):
+    """True when these are the same score, including both being absent."""
+    if one is None or other is None:
+        return one is None and other is None
+    return abs(float(one) - float(other)) < 0.001
+
+
 def rate(item_id, score, favourite=None, push=True, keep_local=False):
     """Store a score locally and mirror it to Jellyfin as far as it allows.
 
@@ -284,49 +294,89 @@ def rate(item_id, score, favourite=None, push=True, keep_local=False):
     own untouched. That is the "remove it from Jellyfin so the two cannot
     contradict each other" case: the rating still exists here, Jellyfin
     simply stops holding a different one.
+
+    Only the score decides whether this counts as synced. The favourite flag
+    and the community rating are extras written afterwards, and a refusal of
+    either is reported without unsaying the score Jellyfin did accept.
     """
     if score is not None:
         score = max(0.0, min(10.0, float(score)))
     connection = _connect()
     row = connection.execute(
-        "SELECT name, media FROM items WHERE id = ?", (item_id,)).fetchone()
+        "SELECT name, media, user_rating FROM items WHERE id = ?",
+        (item_id,)).fetchone()
     if row is None:
         connection.close()
         raise core.JellyStatError("That item is not in the mirror.")
     name = row[0]
+    previous = row[2]
 
     actions = []
+    warnings = []
+    pushed_favourite = False
     # "not pushed" is a deliberate caller choice (JellyRate has already
     # written the score to Jellyfin), not a failure - the distinction
     # matters to library._adopt_rating.
     state = "not pushed"
+    creds = None
     if push:
         try:
             creds = core.get_credentials()
             actions.append(_push_score(creds, item_id, score))
-            if score is not None:
-                addon = xbmcaddon.Addon(ADDON_ID)
-                if addon.getSetting("rating_sets_favourite") == "true":
-                    _push_favourite(creds, item_id,
-                                    score >= FAVOURITE_THRESHOLD)
-                    actions.append("favourite %s"
-                                   % ("set" if score >= FAVOURITE_THRESHOLD
-                                      else "cleared"))
-                community = _push_community_rating(item_id, score)
-                if community:
-                    actions.append(community)
+            # Jellyfin holds the score from here. Nothing below may take
+            # that back: rating_sync is read as "did the score arrive", by
+            # survey()'s failure count and by the reconcile screen, which
+            # re-pushes anything that says no - forever, if the answer is
+            # wrong.
             state = "synced"
         except (core.JellyStatError, urllib.error.HTTPError,
                 urllib.error.URLError, OSError) as err:
-            detail = getattr(err, "code", None)
-            if detail == 403:
-                message = ("Jellyfin refused the write (403). The community "
-                           "rating needs an administrator API key in the "
-                           "addon settings; your score is saved here.")
+            if getattr(err, "code", None) == 403:
+                message = ("Jellyfin refused the write (403); your score is "
+                           "saved here.")
             else:
                 message = "Jellyfin did not accept it: %s" % err
             state = "error: %s" % message
             log("Rating push failed for %s: %s" % (name, err),
+                xbmc.LOGWARNING)
+
+    if state == "synced" and favourite is not None:
+        # An explicit favourite is a change to Jellyfin, not a local note.
+        try:
+            _push_favourite(creds, item_id, bool(favourite))
+            pushed_favourite = True
+            actions.append("favourite %s"
+                           % ("set" if favourite else "cleared"))
+        except (core.JellyStatError, urllib.error.HTTPError,
+                urllib.error.URLError, OSError) as err:
+            warnings.append("the favourite flag was not updated (%s)"
+                            % _why(err))
+    if state == "synced" and score is not None:
+        # The extras, each standing alone. A non-administrator API key
+        # cannot write a community rating, and that must not turn a score
+        # Jellyfin accepted into a failure the reconcile screen retries.
+        addon = xbmcaddon.Addon(ADDON_ID)
+        if addon.getSetting("rating_sets_favourite") == "true":
+            wanted = score >= FAVOURITE_THRESHOLD
+            try:
+                _push_favourite(creds, item_id, wanted)
+                actions.append("favourite %s"
+                               % ("set" if wanted else "cleared"))
+            except (core.JellyStatError, urllib.error.HTTPError,
+                    urllib.error.URLError, OSError) as err:
+                warnings.append("the favourite flag was not updated (%s)"
+                                % _why(err))
+                log("Favourite push failed for %s: %s" % (name, err),
+                    xbmc.LOGWARNING)
+        try:
+            community = _push_community_rating(item_id, score)
+            if community:
+                actions.append(community)
+        except (core.JellyStatError, urllib.error.HTTPError,
+                urllib.error.URLError, OSError) as err:
+            warnings.append("the community rating was not updated (%s)"
+                            % _why(err))
+            log("Community rating push failed for %s: %s" % (name, err),
                 xbmc.LOGWARNING)
 
     from datetime import datetime
@@ -337,6 +387,16 @@ def rate(item_id, score, favourite=None, push=True, keep_local=False):
             connection.execute(
                 "UPDATE items SET jf_rating = NULL, rating_sync = ? "
                 "WHERE id = ?", (state, item_id))
+        elif _same_score(score, previous):
+            # Re-sending a score that is already stored is not a new
+            # opinion, so the date it was given stands. A reconcile push
+            # runs this over every rated item at once, and restamping them
+            # all to today destroys the only thing an incoming Trakt import
+            # has to judge "newer" by - which then silently loses to a date
+            # that only records when the rows were last pushed.
+            connection.execute(
+                "UPDATE items SET rating_sync = ? WHERE id = ?",
+                (state, item_id))
         else:
             connection.execute(
                 "UPDATE items SET user_rating = ?, user_rating_at = ?, "
@@ -347,39 +407,72 @@ def rate(item_id, score, favourite=None, push=True, keep_local=False):
             # The push succeeded, so Jellyfin now holds this exact score.
             connection.execute("UPDATE items SET jf_rating = ? WHERE id = ?",
                                (score, item_id))
-        if favourite is not None:
+        if favourite is not None and pushed_favourite:
+            # Only recorded once Jellyfin has it. Writing it locally
+            # regardless just queued it for deletion: the next mirror sync
+            # copies this column straight back from the server, so the
+            # heart appeared and then quietly vanished within the cycle.
             connection.execute("UPDATE items SET favourite = ? WHERE id = ?",
                                (1 if favourite else 0, item_id))
     connection.close()
-    log("Rated %s: %s (%s)" % (name, score, state))
+    log("Rated %s: %s (%s%s)"
+        % (name, score, state,
+           "; " + "; ".join(warnings) if warnings else ""))
     return {"id": item_id, "name": name, "score": score, "state": state,
             "actions": actions,
+            # Extras that were refused. The score still reached Jellyfin, so
+            # this is not a failure to retry - it is something to mention.
+            "warnings": warnings,
             "synced": state == "synced"}
 
 
 def capabilities():
-    """What this login can actually write, so the page can say so up front."""
+    """What this login can actually write, so the page can say so up front.
+
+    The score itself always goes to Jellyfin as the real number - what is
+    in question here is only the community rating on the item, which needs
+    an administrator key.
+    """
     base, key = _admin_key()
     result = {"likes": True, "favourite": True, "community_rating": False,
-              "note": ""}
+              "admin_known": True, "note": ""}
     if not base or not key:
-        result["note"] = ("Jellyfin stores only a thumbs up or down per "
-                          "user, so that is what your score is sent as. To "
-                          "have it also update the community rating shown "
-                          "in Jellyfin, put an administrator API key in the "
-                          "addon's server settings.")
+        result["note"] = ("Your score is written to Jellyfin as your own "
+                          "rating of the item. To have it also update the "
+                          "community rating everyone sees, put an "
+                          "administrator API key in the addon's server "
+                          "settings.")
         return result
+    # /System/Info rather than /Users/Me: an API key carries no user with
+    # it, so asking Jellyfin who "me" is answers 400 however good the key
+    # is - which reported every administrator key as an ordinary one, and
+    # told the user the community rating could not be written while
+    # _push_community_rating was writing it on every single rate.
+    # /System/Info needs no user context and is administrator-only, which
+    # is the same permission the metadata write needs.
     try:
-        status, users = _request("%s/Users/Me" % base, key, "GET")
-        policy = (users or {}).get("Policy") or {}
-        result["community_rating"] = bool(policy.get("IsAdministrator"))
-    except Exception:
-        result["community_rating"] = False
-    result["note"] = ("The configured API key is an administrator key, so "
-                      "your score is also written to the item's community "
-                      "rating in Jellyfin."
-                      if result["community_rating"] else
-                      "The configured API key is not an administrator key, "
-                      "so the community rating in Jellyfin cannot be "
-                      "updated; your score is sent as a thumbs up or down.")
+        _request("%s/System/Info" % base, key, "GET")
+        result["community_rating"] = True
+    except urllib.error.HTTPError as err:
+        # Refused is a real answer: this key is not an administrator's.
+        # Anything else means the question went unanswered.
+        result["admin_known"] = err.code in (401, 403)
+    except (urllib.error.URLError, OSError, ValueError):
+        result["admin_known"] = False
+    if result["community_rating"]:
+        result["note"] = ("The configured API key is an administrator key, "
+                          "so your score is also written to the item's "
+                          "community rating in Jellyfin.")
+    elif result["admin_known"]:
+        result["note"] = ("The configured API key is not an administrator "
+                          "key, so the community rating in Jellyfin cannot "
+                          "be updated. Your own rating of the item is still "
+                          "written.")
+    else:
+        # Saying "not an administrator" on the strength of a timeout is how
+        # the old check misled people; an unanswered question says so.
+        result["note"] = ("Could not reach Jellyfin to check whether the "
+                          "configured API key is an administrator key, so "
+                          "the community rating may or may not be updated. "
+                          "Your own rating of the item is still written.")
     return result

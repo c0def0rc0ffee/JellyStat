@@ -5,18 +5,23 @@ Small on purpose: it serves one page, two JSON endpoints and an optional
 password gate, all from the standard library, because a Kodi addon cannot
 assume anything else is installed on the box.
 
-It is meant for a home network. Binding to every interface (the default) puts
-the page on http://<kodi-box>:8099/ for any device on the LAN; the password
-setting is there for shared households, not as protection against the open
-internet, and the addon never asks you to port-forward it.
+It is meant for a home network. Binding to every interface puts the page on
+http://<kodi-box>:8099/ for any device on the LAN, and that needs a password
+set: without one the export endpoint hands the whole database to anything
+that asks, so it serves this machine only instead and says why. The password
+is there for shared households, not as protection against the open internet,
+and the addon never asks you to port-forward it.
 """
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
+import secrets
 import socket
 import threading
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -40,7 +45,7 @@ import recommend
 import webdata
 
 ADDON_ID = "script.jellystat"
-PAGE = "special://home/addons/%s/resources/web/dashboard.html" % ADDON_ID
+PAGE_RELATIVE = "resources/web/dashboard.html"
 COOKIE = "jellystat_auth"
 
 DEFAULT_PORT = 8099
@@ -81,15 +86,148 @@ def _setting_int(addon, name, default):
         return default
 
 
+# The X-Auth-Token a script sends is derived from the password, because a
+# script has no way to fill in a login form. That value travels over plain
+# HTTP on the home network, so it has to survive being seen: a bare SHA-256
+# of a short password falls to a wordlist in seconds, which made one
+# captured request enough to recover the password itself. The salt is fixed
+# rather than per-install because both sides must arrive at the same value
+# with nothing shared between them but the password - it is the work factor
+# that costs an attacker anything, and that is what this buys.
+API_TOKEN_SALT = b"jellystat-web-auth-v1"
+API_TOKEN_ROUNDS = 200000
+
+# Deriving it takes a noticeable fraction of a second on the sort of box
+# this runs on, and a polling script sends it on every request, so the
+# answer is worked out once per password and kept.
+_token_cache = {}
+
+# How long a signed-in browser stays signed in. Long enough not to nag
+# somebody part-way through an evening, short enough that a cookie lifted
+# off the wire stops working. Sessions live in memory only, so restarting
+# Kodi signs every browser out - which is the right way round for a box
+# that is often left on.
+SESSION_HOURS = 12
+
+_sessions = {}          # token -> (expiry epoch, the password it was issued for)
+_sessions_lock = threading.Lock()
+
+
 def _token_for(password):
-    """The cookie value a correct password produces."""
-    return hashlib.sha256(("jellystat:" + password).encode("utf-8")).hexdigest()
+    """The X-Auth-Token value a correct password produces, for scripts."""
+    cached = _token_cache.get(password)
+    if cached is None:
+        cached = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                                     API_TOKEN_SALT, API_TOKEN_ROUNDS).hex()
+        _token_cache[password] = cached
+    return cached
+
+
+def _new_session(password):
+    """Issue a fresh session token and remember it until it expires."""
+    token = secrets.token_urlsafe(32)
+    now = time.time()
+    with _sessions_lock:
+        for stale in [t for t, (expiry, _) in _sessions.items()
+                      if expiry <= now]:
+            del _sessions[stale]
+        _sessions[token] = (now + SESSION_HOURS * 3600, _token_for(password))
+    return token
+
+
+def _session_valid(token, password):
+    """True for a token this process issued, still live, still for this
+    password.
+
+    Tying it to the password means changing the password signs out every
+    browser, which is what somebody changing it is usually trying to do.
+    A plain lookup rather than a constant-time compare: the token is 32
+    random bytes, so there is no secret here to guess a character at a time.
+    """
+    if not token:
+        return False
+    with _sessions_lock:
+        held = _sessions.get(token)
+        if held is None:
+            return False
+        expiry, issued_for = held
+        if expiry <= time.time() or issued_for != _token_for(password):
+            del _sessions[token]
+            return False
+        return True
 
 
 def _read_page():
-    path = xbmcvfs.translatePath(PAGE)
+    """The dashboard HTML, from wherever this addon is actually installed.
+
+    Asked of the addon rather than assumed to be under special://home:
+    a system-wide or portable install puts it somewhere else entirely, and
+    hard-coding the usual path served those users a 404 for the one file
+    the whole dashboard is.
+    """
+    base = _addon().getAddonInfo("path")
+    path = xbmcvfs.translatePath(os.path.join(base, PAGE_RELATIVE))
     with open(path, encoding="utf-8") as handle:
         return handle.read()
+
+
+def _own_names():
+    """The names this machine legitimately answers to."""
+    names = {"localhost"}
+    try:
+        host = socket.gethostname().strip().lower()
+    except OSError:
+        return names
+    if host:
+        short = host.partition(".")[0]
+        # gethostname() returns the short or the qualified form depending
+        # on the box; accept both, plus the mDNS spelling, so every address
+        # local_urls() prints keeps working.
+        names.update((host, short, short + ".local"))
+    return names
+
+
+def _host_name(header):
+    """The name part of a Host header, lowercased and without its port."""
+    value = (header or "").strip().lower()
+    if value.startswith("["):        # [::1]:8099 - bracketed IPv6 literal
+        return value.partition("]")[0][1:]
+    if value.count(":") == 1:        # name:port; a bare IPv6 has more
+        return value.rpartition(":")[0]
+    return value
+
+
+def _host_allowed(header):
+    """True when Host names this server rather than someone else's domain.
+
+    The origin check further down can only compare Origin against Host, so
+    it is defeated by anyone who controls both. That is DNS rebinding: a
+    page on some domain whose name has been re-pointed at this box sends an
+    Origin and a Host that agree, the check calls it same-origin, and the
+    browser - which also thinks it is same-origin - lets the page read the
+    reply. Pinning Host to addresses this server can actually be reached at
+    is what closes it, and it runs on every request rather than only the
+    ones that change something: the database export is a GET, and it is the
+    thing worth stealing.
+
+    An IP literal is always accepted. A page can only be same-origin with
+    one if it was served from that address, which means it was served by
+    this dashboard. Names are the whole risk, so only the ones the addon
+    itself hands out are allowed: localhost, this machine's own hostname,
+    and mDNS ".local" names, which the local network answers rather than
+    public DNS.
+    """
+    name = _host_name(header)
+    if not name:
+        # HTTP/1.1 requires a Host; a request without one is not a browser
+        # following the addon's own address.
+        return False
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    return name in _own_names() or name.endswith(".local")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -136,28 +274,50 @@ class Handler(BaseHTTPRequestHandler):
     def _authorised(self, password):
         """True when this request may see data.
 
-        Accepts the cookie the login form sets, or the same value as an
-        `X-Auth-Token` header so a script can poll the JSON without a
-        browser session.
+        Two ways in, deliberately different in kind. A browser signs in
+        once and carries a random session token this process issued, which
+        expires and can be revoked by changing the password. A script sends
+        `X-Auth-Token`, derived from the password, because it cannot fill
+        in a login form - that one is a standing credential and is treated
+        as such.
+
+        Both used to be the same value: one unsalted hash of the password,
+        identical on every device and for every login, with no expiry at
+        all. Seeing a single request was enough to hold the dashboard for
+        good.
         """
         if not password:
             return True
-        # Compared as bytes: compare_digest raises TypeError on non-ASCII
-        # str, and both the header and the cookie arrive attacker-chosen.
-        expected = _token_for(password).encode("utf-8")
-        header = (self.headers.get("X-Auth-Token") or "").strip()
-        if header and hmac.compare_digest(header.encode("utf-8"), expected):
-            return True
         for chunk in (self.headers.get("Cookie") or "").split(";"):
             name, _, value = chunk.strip().partition("=")
-            if name == COOKIE and hmac.compare_digest(
-                    value.encode("utf-8"), expected):
+            if name == COOKIE and _session_valid(value, password):
                 return True
+        # Compared as bytes: compare_digest raises TypeError on non-ASCII
+        # str, and the header arrives attacker-chosen.
+        header = (self.headers.get("X-Auth-Token") or "").strip()
+        if header:
+            return hmac.compare_digest(header.encode("utf-8"),
+                                       _token_for(password).encode("utf-8"))
         return False
 
     # ---- routes -----------------------------------------------------------
 
+    def _reject_host(self):
+        """Refuse a request addressed to a name this server does not own."""
+        self._send(403,
+                   "This dashboard only answers to its own address. Open it "
+                   "at this machine's IP or name - the addon's settings "
+                   "screen prints the ones that work.\n",
+                   "text/plain; charset=utf-8",
+                   [("Connection", "close")])
+
     def do_GET(self):
+        # Before routing, and before the password check: a request naming
+        # somebody else's domain is not this dashboard's traffic whether or
+        # not it carries a valid token.
+        if not _host_allowed(self.headers.get("Host")):
+            self._reject_host()
+            return
         route = urlparse(self.path)
         password = self._password()
         if route.path in ("/", "/index.html"):
@@ -166,8 +326,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 self._send(200, _read_page(), "text/html; charset=utf-8")
-            except OSError as err:
-                self._send(500, "Dashboard page missing: %s" % err,
+            except Exception as err:
+                # Any failure, not just a missing file: resolving the
+                # addon's own path can fail in its own ways, and an
+                # unhandled one here drops the connection so the browser
+                # shows nothing at all rather than the reason.
+                self._send(500, "Could not read the dashboard page: %s" % err,
                            "text/plain; charset=utf-8")
             return
 
@@ -183,6 +347,21 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(401, {"error": "Password required."})
             return
 
+        try:
+            self._dispatch_get(route)
+        except Exception as err:
+            log("GET %s failed: %s" % (route.path, err),
+                xbmc.LOGERROR)
+            self._send_json(500, {"error": str(err)})
+
+    def _dispatch_get(self, route):
+        """Route one authorised GET.
+
+        Split out so a single guard covers every endpoint. Half of these
+        called straight into a data module with nothing around them, so an
+        unexpected failure escaped the handler, reset the socket, and left
+        the page showing a connection error rather than the reason.
+        """
         if route.path == "/api/data":
             self._serve_data(parse_qs(route.query))
         elif route.path == "/api/history":
@@ -271,6 +450,11 @@ class Handler(BaseHTTPRequestHandler):
         so any web page opened on the LAN could otherwise delete import
         batches. Browsers always send Origin on cross-origin POSTs; the
         dashboard's own requests either omit it or carry this host.
+
+        This compares Origin against Host and so is only as trustworthy as
+        Host itself, which is why _host_allowed() pins that first. The two
+        run together: the pin establishes that Host names this server, and
+        this then establishes that the page asking shares that name.
         """
         origin = (self.headers.get("Origin") or "").strip()
         if not origin:
@@ -280,8 +464,31 @@ class Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").strip()
         return urlparse(origin).netloc != host
 
+    def _drain(self):
+        """Read and discard an announced request body.
+
+        A refused POST still has its body sitting in the socket, and this
+        is a keep-alive server: leaving it there means the next request on
+        that connection starts part-way through the last one's payload and
+        is parsed as nonsense.
+        """
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self.close_connection = True
+            return
+        if length > 0:
+            try:
+                self.rfile.read(min(length, importer.MAX_BYTES))
+            except Exception:
+                self.close_connection = True
+
     def do_POST(self):
+        if not _host_allowed(self.headers.get("Host")):
+            self._reject_host()
+            return
         if self._cross_origin():
+            self._drain()
             self._send_json(403, {"error": "Cross-origin requests are not "
                                            "accepted."})
             return
@@ -294,6 +501,7 @@ class Handler(BaseHTTPRequestHandler):
         # routes, rather than part-way down the list.
         password = self._password()
         if password and not self._authorised(password):
+            self._drain()
             self._send_json(401, {"error": "Password required."})
             return
         if path == "/api/rate":
@@ -420,8 +628,15 @@ class Handler(BaseHTTPRequestHandler):
     # ---- login -----------------------------------------------------------
 
     def _login(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length).decode("utf-8", "replace")
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            # A malformed length used to raise here and drop the
+            # connection instead of answering.
+            self._send(400, "Bad request.", "text/plain; charset=utf-8",
+                       [("Connection", "close")])
+            return
+        body = self.rfile.read(max(0, length)).decode("utf-8", "replace")
         supplied = (parse_qs(body).get("password") or [""])[0]
         password = self._password()
         if not password or not hmac.compare_digest(
@@ -431,10 +646,12 @@ class Handler(BaseHTTPRequestHandler):
                 '<p class="err">That password was not accepted.</p>'),
                 "text/html; charset=utf-8")
             return
-        # Session cookie only: it lasts until the browser is closed, which is
-        # the right lifetime for a page on the living-room network.
-        cookie = "%s=%s; Path=/; HttpOnly; SameSite=Strict" % (
-            COOKIE, _token_for(password))
+        # A fresh random token per sign-in, good for SESSION_HOURS and no
+        # longer. Still a session cookie as far as the browser is concerned
+        # - closing it forgets the cookie - but the server now decides when
+        # it stops working rather than trusting the browser to.
+        cookie = ("%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Strict"
+                  % (COOKIE, _new_session(password), SESSION_HOURS * 3600))
         self._send(303, b"", "text/plain",
                    [("Location", "/"), ("Set-Cookie", cookie)])
 
@@ -800,6 +1017,8 @@ class Handler(BaseHTTPRequestHandler):
         import sqlite3
         import tempfile
         stamp = datetime.now().strftime("%Y-%m-%d")
+        source = snapshot = None
+        snap_path = None
         try:
             source = sqlite3.connect(history.db_path(), timeout=10)
             with tempfile.NamedTemporaryFile(suffix=".db",
@@ -809,13 +1028,28 @@ class Handler(BaseHTTPRequestHandler):
             with snapshot:
                 source.backup(snapshot)
             snapshot.close()
-            source.close()
+            snapshot = None
             with open(snap_path, "rb") as handle:
                 blob = handle.read()
-            os.unlink(snap_path)
         except Exception as err:
             self._send_json(500, {"error": "Could not export: %s" % err})
             return
+        finally:
+            # The copy is created the moment the connection opens, so an
+            # export that fails part-way used to leave a multi-megabyte
+            # file in the temp directory and two open handles behind it -
+            # every time it failed.
+            for handle in (snapshot, source):
+                try:
+                    if handle is not None:
+                        handle.close()
+                except Exception:
+                    pass
+            if snap_path:
+                try:
+                    os.unlink(snap_path)
+                except OSError:
+                    pass
         self._send(200, blob, "application/octet-stream",
                    [("Content-Disposition",
                      'attachment; filename="jellystat-backup-%s.db"'
@@ -891,6 +1125,24 @@ def start():
     port = _setting_int(addon, "web_port", DEFAULT_PORT)
     host = "0.0.0.0" if addon.getSetting("web_bind_all") != "false" \
         else "127.0.0.1"
+    if lan_refused(addon):
+        # Asked to listen on every interface with no password set. That
+        # combination hands anything on the network the whole database
+        # over /api/export - every title, every viewing, every file path -
+        # and the run of the box besides: /api/play, /api/rate,
+        # /api/import, /api/reconcile. The origin check cannot help here,
+        # because a program that is not a browser simply omits the header
+        # it inspects.
+        #
+        # So it serves the machine it is running on and says why, rather
+        # than doing the exposing thing quietly. Setting a password in the
+        # addon's settings restores it, which is one field and takes
+        # effect within seconds.
+        host = "127.0.0.1"
+        log("The dashboard is set to be reachable from other machines but "
+            "has no password, so it is being served to this machine only. "
+            "Set a password in the addon's Web dashboard settings to open "
+            "it to the network.", xbmc.LOGWARNING)
     try:
         server = ThreadingHTTPServer((host, port), Handler)
     except OSError as err:
@@ -924,6 +1176,19 @@ def stop():
     _server = None
     _thread = None
     log("Dashboard stopped")
+
+
+def lan_refused(addon=None):
+    """True when network access is asked for but withheld for want of a
+    password.
+
+    The one combination this refuses: listening on every interface with no
+    password at all. Everything else - loopback with or without a password,
+    the network with one - is served exactly as configured.
+    """
+    addon = addon or _addon()
+    return (addon.getSetting("web_bind_all") != "false"
+            and not (addon.getSetting("web_password") or "").strip())
 
 
 def local_urls(port):

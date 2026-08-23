@@ -22,7 +22,7 @@ matters because getting it wrong would invent numbers:
   and presenting the sum as fact.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import xbmc
 
@@ -44,6 +44,19 @@ def log(message, level=xbmc.LOGINFO):
 
 
 def _connect():
+    """A connection with both schemas already in place.
+
+    Everything here reads the play log as well as the mirror. The two live
+    in one file but are created by different modules, and library.connect()
+    builds only the mirror's half - it leaves the plays table to whichever
+    module touches playlog first. On a fresh install that was a race this
+    could lose: the dashboard opens /api/data and /api/screentime together,
+    /api/data spends seconds fetching from Jellyfin before it reaches the
+    play log, and screen time got there first and asked for a table nobody
+    had made yet. Asking playlog for the schema costs nothing after the
+    first call and settles it.
+    """
+    playlog.connect().close()
     return library.connect()
 
 
@@ -78,11 +91,26 @@ def _tile_row(connection, since=None):
     }
 
 
+def _utc_offset():
+    """Local clock minus UTC clock, as a timedelta.
+
+    The same reading webdata takes, and for the same reason: Jellyfin dates
+    everything in UTC and every question here is about the local calendar.
+    """
+    return datetime.now() - datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def tiles(now=None):
     """The two headline blocks: this month, and all time."""
     now = now or datetime.now()
-    month_start = now.replace(day=1, hour=0, minute=0,
-                              second=0).strftime("%Y-%m-%d")
+    # last_played holds Jellyfin's UTC timestamp, so the month boundary has
+    # to be the same instant written in UTC. Comparing a local date against
+    # it filed a film watched at 23:30 on the last night of the month under
+    # the next month for anybody east of UTC, and the previous one for
+    # anybody west.
+    local_start = now.replace(day=1, hour=0, minute=0, second=0,
+                              microsecond=0)
+    month_start = (local_start - _utc_offset()).strftime("%Y-%m-%dT%H:%M:%S")
     connection = _connect()
     try:
         this_month = _tile_row(connection, month_start)
@@ -177,9 +205,19 @@ def screen_time(days=7, now=None):
                   "today": day == today.strftime("%Y-%m-%d")}
                  for day in labels]
 
-    # The average deliberately divides by elapsed days, not by the window:
-    # a week that is three days old should not report a third of its rate.
-    elapsed = min(days, (today - start).days + 1)
+    # Divides by the days the log actually covers, not by the whole window:
+    # a log that began three days ago should not report a seventh of its
+    # rate. (The old sum here worked out to `days` every time, because
+    # `start` is defined as exactly that many days back - so the intent
+    # this comment describes was never actually applied.)
+    elapsed = days
+    if covered:
+        try:
+            first = datetime.strptime(covered, "%Y-%m-%d").date()
+        except ValueError:
+            first = None
+        if first and first > start:
+            elapsed = max(1, (today - first).days + 1)
     average = current["total"] / elapsed if elapsed else 0.0
     previous_average = earlier["total"] / days if days else 0.0
 

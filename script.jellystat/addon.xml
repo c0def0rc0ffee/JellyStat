@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.jellystat" name="JellyStat" version="0.24.2" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.25.0" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -8,8 +8,42 @@
   </extension>
   <extension point="xbmc.service" library="service.py"/>
   <extension point="xbmc.addon.metadata">
-    <summary lang="en_GB">Watch statistics from your Jellyfin server</summary>
-    <description lang="en_GB">Shows what you have watched on your Jellyfin server, including genre and rating. Browse watched movies and TV episodes, and view summary statistics such as genre breakdown and average ratings. Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
+    <summary lang="en_GB">Watch statistics and a viewing log for your Jellyfin server</summary>
+    <description lang="en_GB">Keeps a record of what you watch and shows you what is in it.
+
+Browse watched films and TV, with genre breakdowns, average ratings and duplicate-copy detection. A web dashboard, served by the addon itself, opens the same picture on your phone or laptop.
+
+Because Jellyfin keeps only a play count and a single last-played date, JellyStat keeps its own log of individual sittings - the clock time, how much was watched, and one row per viewing rather than one per title. That is what the screen-time and viewing-habit charts are built from. Plays on other devices are picked up from the server too.
+
+Also: rate what you have watched and have the score written back to Jellyfin; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
+
+Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
+    <news lang="en_GB">v0.25.0
+A correctness and safety release. Every finding from a full source audit is fixed.
+
+Viewing log
+- Resuming a film is now credited correctly. Previously the resume point was counted as watched time, so a film picked up part-way through and left paused could record hours nobody watched, and a film finished across two evenings could never be marked complete.
+- Trakt imports store times in your own timezone. They were being stored as UTC, which filed evening viewing under the wrong hour and, west of UTC, the wrong day - and defeated the duplicate check, so "add what is missing" quietly added plays again. Rows already imported are repaired automatically on first run, after a backup.
+- Duplicate detection now uses the 12-hour window it always documented, instead of the calendar date.
+
+Imports and backups
+- A first-ever Trakt import on a fresh install no longer fails.
+- Double-clicking Import no longer imports everything twice.
+- File imports that replace or delete play history now take a backup first, as Trakt imports already did.
+- A backup that fails part-way no longer leaves a truncated file behind that looked like a valid restore point.
+
+Ratings
+- Pushing ratings to Jellyfin no longer overwrites the dates they were originally given.
+- A rating Jellyfin accepted is no longer reported as failed when an optional extra write is refused, which had left the reconcile screen retrying the same items forever.
+- The administrator-key check now gives the right answer.
+
+Web dashboard
+- Closed a hole where a web page you visited could read your entire viewing history from the dashboard and control playback.
+- The dashboard will not open itself to the network without a password set; it serves this machine only until there is one, and says so.
+- Signing in now issues a session that expires, instead of a fixed token that worked forever.
+- Similar-titles suggestions work again; they had been failing on every request.
+
+Also: the library mirror no longer stops updating on large libraries, screen time works on a fresh install, and titles with accented capitals are matched properly instead of being logged twice.</news>
     <platform>all</platform>
     <license>MIT</license>
     <assets>

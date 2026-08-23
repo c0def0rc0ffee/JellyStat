@@ -26,12 +26,14 @@ import csv
 import io
 import json
 import secrets
+import threading
 import time
 from datetime import datetime, timedelta
 
 import xbmc
 
 import backup
+import importer
 import library
 import playlog
 import trakt
@@ -102,6 +104,10 @@ MODES = {
 DEFAULT_MODE = "trakt-wins"
 
 _staged = {}
+# The dashboard is served by a threading HTTP server, so two requests can
+# be inside this module at once - a double-clicked Import button is the
+# ordinary way it happens. Every read or write of _staged goes through this.
+_lock = threading.Lock()
 
 
 def log(message, level=xbmc.LOGINFO):
@@ -122,23 +128,36 @@ def _prune():
 # Staging
 # ---------------------------------------------------------------------------
 
-def _existing_play_keys(connection):
-    """(title key, day) for every sitting already logged."""
-    keys = set()
-    for show, title, day in connection.execute(
-            "SELECT show, title, day FROM plays"):
-        keys.add((playlog.dedup_key(show, title), day))
-    return keys
+def _existing_play_times(connection):
+    """Title key -> the times that title has already been logged at.
+
+    Times, not calendar days. The day was the easy key and the wrong one:
+    a sitting this box logged at 23:55 and the Trakt scrobble stamped
+    00:05 fall on two dates and were imported as two viewings, while a
+    genuine morning-and-evening rewatch shares one date and was silently
+    dropped as a duplicate. DEDUP_HOURS was documented as the rule the
+    whole time; this is it applied.
+    """
+    times = {}
+    for show, title, started in connection.execute(
+            "SELECT show, title, started_at FROM plays"):
+        when = playlog.parse_stamp(started)
+        if when is None:
+            continue
+        times.setdefault(playlog.dedup_key(show, title), []).append(when)
+    return times
 
 
 def _when(value):
     """A comparable timestamp.
 
-    Ratings written here carry a T between date and time, ones carried over
-    from Trakt carry a space, and "2020-01-01T09:00" sorts before
-    "2020-01-01 09:00" for no reason anybody meant. Comparing these as
-    strings without flattening that is the kind of bug that silently keeps
-    the wrong score.
+    Everything written now carries a T between date and time, but ratings
+    stored by earlier versions from a Trakt export carry a space, and
+    "2020-01-01T09:00" sorts before "2020-01-01 09:00" for no reason
+    anybody meant. Comparing these as strings without flattening that is
+    the kind of bug that silently keeps the wrong score, so the flattening
+    stays for as long as rows written under the old spelling can still be
+    sitting in the table.
     """
     return (value or "").replace("T", " ")
 
@@ -185,7 +204,8 @@ def _rating_report(connection, ratings):
 
 def stage(envelope, progress=None):
     """Parse and match an export; write nothing. Returns the report."""
-    _prune()
+    with _lock:
+        _prune()
     parsed = trakt.parse(envelope)
     history = parsed["history"]
     ratings = parsed["ratings"]
@@ -223,12 +243,16 @@ def stage(envelope, progress=None):
 
     connection = library.connect()
     try:
-        existing = _existing_play_keys(connection)
+        existing = _existing_play_times(connection)
+        window = timedelta(hours=DEDUP_HOURS)
         duplicates = 0
         for session in history:
-            key = (playlog.dedup_key(session.get("show"), session["title"]),
-                   session["started_at"][:10])
-            session["duplicate"] = key in existing
+            when = playlog.parse_stamp(session["started_at"])
+            already = existing.get(
+                playlog.dedup_key(session.get("show"), session["title"]), ())
+            session["duplicate"] = bool(
+                when is not None
+                and any(abs(when - other) <= window for other in already))
             if session["duplicate"]:
                 duplicates += 1
         by_kind = {"movie": [], "episode": [], "show": []}
@@ -245,8 +269,9 @@ def stage(envelope, progress=None):
     minutes = sum(s["watched_seconds"] for s in history) / 60.0
 
     token = secrets.token_hex(16)
-    _staged[token] = {"at": time.time(), "history": history,
-                      "ratings": ratings}
+    with _lock:
+        _staged[token] = {"at": time.time(), "history": history,
+                          "ratings": ratings}
     categories = {
             "history": {
                 "label": "Watch history",
@@ -273,8 +298,12 @@ def stage(envelope, progress=None):
         "token": token,
         "policy": {"push_to_jellyfin": PUSH_RATINGS,
                    "durations": "assumed from runtime"},
-        "unmatched": len(history) - matched
-                     + sum(c.get("unmatched", 0) for c in categories.values()),
+        # Summed over the categories, which already include history's own
+        # unmatched count - adding it again on top counted every unmatched
+        # play twice and told the user an import was failing half as well
+        # as it really was.
+        "unmatched": sum(c.get("unmatched", 0)
+                         for c in categories.values()),
         "modes": _cost_modes(categories),
         "default_mode": DEFAULT_MODE,
         "categories": categories,
@@ -366,8 +395,9 @@ def _unmatched_rows(staged, chosen):
 
 def unmatched_csv(token):
     """The unmatched rows of a staged or just-finished import, as CSV."""
-    _prune()
-    staged = _staged.get(token)
+    with _lock:
+        _prune()
+        staged = _staged.get(token)
     if not staged:
         raise TraktImportError("That import is no longer held in memory.")
     rows = _unmatched_rows(staged, list(CATEGORIES))
@@ -392,7 +422,7 @@ def _insert_history(connection, sessions, batch_id, skip_duplicates=True):
         if skip_duplicates and session.get("duplicate"):
             skipped += 1
             continue
-        start = datetime.strptime(session["started_at"], "%Y-%m-%d %H:%M:%S")
+        start = datetime.strptime(session["started_at"], playlog.STAMP)
         end = start + timedelta(seconds=session["watched_seconds"])
         connection.execute(
             "INSERT INTO plays (started_at, ended_at, day, hour, weekday, "
@@ -400,7 +430,7 @@ def _insert_history(connection, sessions, batch_id, skip_duplicates=True):
             "watched_seconds, completed, source, device, batch_id, assumed, "
             "item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, "
             "'trakt', ?, ?, 1, ?)",
-            (session["started_at"], end.strftime("%Y-%m-%d %H:%M:%S"),
+            (session["started_at"], end.strftime(playlog.STAMP),
              session["started_at"][:10], start.hour, start.weekday(),
              session["media"], session["title"], session.get("show"),
              session.get("season"), session.get("episode"),
@@ -453,17 +483,16 @@ def _apply_ratings(connection, rows, stamp, policy):
 
 
 def commit(token, categories, mode=DEFAULT_MODE):
-    """Import the chosen categories under a mode, snapshot either side."""
-    _prune()
-    staged = _staged.get(token)
-    if not staged:
-        raise TraktImportError(
-            "That import expired before it was confirmed. Load the files "
-            "again; nothing was written.")
-    if staged.get("done"):
-        raise TraktImportError(
-            "That import has already been run. Fetch from Trakt again to "
-            "import anything further; nothing was written twice.")
+    """Import the chosen categories under a mode, snapshot either side.
+
+    The staged import is claimed before any writing starts. Checking a
+    "done" flag that is only set at the end leaves the entire insert
+    window open: a second request - a double-clicked button, a browser
+    retrying - reads the flag while the first is still working, finds it
+    unset, and replays the whole export. The duplicate marks were worked
+    out at staging time, so nothing downstream would have skipped a single
+    row of it.
+    """
     chosen = [c for c in (categories or []) if c in CATEGORIES]
     if not chosen:
         raise TraktImportError("Nothing was chosen, so there was nothing "
@@ -473,11 +502,51 @@ def commit(token, categories, mode=DEFAULT_MODE):
         raise TraktImportError("Unknown import mode %r." % mode)
     skip_duplicates = rule["plays_skip_duplicates"]
 
+    with _lock:
+        _prune()
+        staged = _staged.get(token)
+        if not staged:
+            raise TraktImportError(
+                "That import expired before it was confirmed. Load the "
+                "files again; nothing was written.")
+        if staged.get("done"):
+            raise TraktImportError(
+                "That import has already been run. Fetch from Trakt again "
+                "to import anything further; nothing was written twice.")
+        if staged.get("running"):
+            raise TraktImportError(
+                "That import is already running. Wait for it to finish; "
+                "nothing was written twice.")
+        # Claimed, not completed. A run that fails releases this again so
+        # the user can retry the import they already staged, while a run
+        # that succeeds marks it done for good.
+        staged["running"] = True
+
+    try:
+        return _run_commit(token, staged, chosen, mode, rule, skip_duplicates)
+    except Exception:
+        # Nothing was committed, so the claim is given back and the same
+        # staged import can be confirmed again.
+        with _lock:
+            staged["running"] = False
+        raise
+
+
+def _run_commit(token, staged, chosen, mode, rule, skip_duplicates):
+    """The writing half of commit(), once the import has been claimed."""
     result = {"categories": chosen, "mode": mode, "mode_label": rule["label"],
               "history": None, "ratings": {}}
     with backup.around("trakt-import") as snapshots:
         connection = library.connect()
         playlog.connect().close()          # ensure the plays schema exists
+        # And the batch table, which belongs to the file importer: this
+        # writes a row there too, and on a fresh install nothing had made
+        # it. Going straight from a first Trakt import - without ever
+        # opening the file importer or the batches list - met "no such
+        # table: import_batches" and lost the whole confirmed import.
+        # Its one definition is reused rather than repeated, so the two
+        # writers cannot drift apart.
+        connection.executescript(importer.BATCHES_SCHEMA)
         stamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         try:
             with connection:
@@ -514,6 +583,14 @@ def commit(token, categories, mode=DEFAULT_MODE):
     # Kept rather than dropped: the result screen offers the rows that found
     # no home as a file, and it can only do that while they still exist.
     # _prune clears them on the same timer as any other staged import.
-    staged["done"] = True
-    log("Trakt import finished: %s" % json.dumps(result))
+    with _lock:
+        staged["running"] = False
+        staged["done"] = True
+    # A summary, not the whole result: that carries one dict per unmatched
+    # row, and an export with a few thousand of them wrote a multi-megabyte
+    # single line into kodi.log on every import.
+    log("Trakt import finished: %s, %d unmatched, mode %s"
+        % (json.dumps({k: v for k, v in result.items()
+                       if k not in ("unmatched", "backups")}),
+           len(result.get("unmatched") or []), mode))
     return result

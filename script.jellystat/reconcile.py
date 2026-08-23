@@ -92,14 +92,25 @@ def survey():
     }
 
 
-def _targets(connection, scope):
+def _targets(connection, scope, action="push"):
     """The items an action applies to.
 
     "contradicting" is the narrow fix: only where the two hold different
     scores. "all" also sends the ones Jellyfin is simply missing, which is
     what makes the two copies identical rather than merely consistent.
+
+    The action matters as well as the scope. Clearing concerns only rows
+    Jellyfin actually holds a rating for - a row it holds nothing for is
+    already in the state clearing would put it in. Ignoring that sent a
+    DELETE for every locally-rated title, then reported "Cleared 3000 of
+    3000" for a job that changed nothing at all.
     """
-    if scope == "contradicting":
+    if action == "clear":
+        where = "jf_rating IS NOT NULL"
+        if scope == "contradicting":
+            where += (" AND user_rating IS NOT NULL "
+                      "AND ABS(user_rating - jf_rating) >= 0.001")
+    elif scope == "contradicting":
         where = ("user_rating IS NOT NULL AND jf_rating IS NOT NULL "
                  "AND ABS(user_rating - jf_rating) >= 0.001")
     else:
@@ -123,18 +134,28 @@ def start(action="push", scope="all"):
     global _worker
     if action not in ("push", "clear"):
         raise ValueError("Action must be push or clear.")
+    # Claimed before the target list is read, not after. The read takes a
+    # moment, and checking "is it running" in one lock and setting it in
+    # another left room for a double-clicked button to start two workers -
+    # each pushing every item, with both writing the same counters.
     with _lock:
         if _job["state"] == "running":
             return dict(_job)
-    connection = library.connect()
-    try:
-        targets = _targets(connection, scope)
-    finally:
-        connection.close()
-    with _lock:
-        _job.update(state="running", action=action, done=0,
-                    total=len(targets), failed=0, message=None,
+        _job.update(state="running", action=action, done=0, total=0,
+                    failed=0, message=None,
                     started_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    try:
+        connection = library.connect()
+        try:
+            targets = _targets(connection, scope, action)
+        finally:
+            connection.close()
+    except Exception:
+        with _lock:
+            _job.update(state="idle", message="Could not read the ratings.")
+        raise
+    with _lock:
+        _job.update(total=len(targets))
     _worker = threading.Thread(target=_run, args=(action, targets),
                                name="JellyStatReconcile")
     _worker.daemon = True

@@ -41,6 +41,7 @@ from datetime import datetime
 
 import xbmc
 
+import backup
 import history
 import playlog
 
@@ -244,12 +245,21 @@ def _parse_jellystat_json(data):
 # ---- Trakt / Letterboxd ----------------------------------------------------
 
 def _parse_trakt_csv(rows):
-    """Trakt history export: full timestamps in `watched_at`."""
+    """Trakt history export: full timestamps in `watched_at`, in UTC."""
     sessions = []
     for row in rows:
-        started = _parse_stamp(row.get("watched_at"))
+        raw = (row.get("watched_at") or "").strip()
+        started = _parse_stamp(raw)
         if not started:
             continue
+        # Trakt is the one format here that dates things in UTC; the play
+        # log is local throughout. Letterboxd diary dates and JellyStat's
+        # own exports are already local, which is why this converts in the
+        # Trakt reader rather than in _parse_stamp, which they all share.
+        # A bare date has no time to convert and is left where it is, so a
+        # conversion cannot drag it across midnight into the wrong day.
+        if len(raw) > 10:
+            started = playlog.to_local(started)
         kind = (row.get("type") or "").strip().lower()
         if kind in ("episode", "show"):
             sessions.append(_session(
@@ -491,81 +501,89 @@ def commit(token, mode="merge", replace_sources=None):
     source = "import:%s" % meta["format"]
 
     replaced = 0
-    connection = _batches_connect()
-    try:
-        with connection:
-            if mode == "replace":
-                sources = replace_sources or ["import"]
-                clauses = []
-                for name in sources:
-                    if name == "import":
-                        clauses.append("source LIKE 'import:%'")
-                    elif name == "kodi":
-                        clauses.append("source = 'kodi'")
-                if not clauses:
-                    raise ImportError_("Replace mode needs at least one "
-                                       "source to replace.")
+    # A copy either side, the same as the Trakt importer takes. Replace
+    # mode deletes every row in the file's date range - including the Kodi
+    # box's own first-hand log when it is asked to include it - and nothing
+    # else in the addon can put those back: delete_batch() only removes
+    # what an import added, never what one replaced. The "after" copy is
+    # taken even when the import fails, because a half-finished import is
+    # exactly the state worth being able to look at later.
+    with backup.around("import-%s" % mode):
+        connection = _batches_connect()
+        try:
+            with connection:
+                if mode == "replace":
+                    sources = replace_sources or ["import"]
+                    clauses = []
+                    for name in sources:
+                        if name == "import":
+                            clauses.append("source LIKE 'import:%'")
+                        elif name == "kodi":
+                            clauses.append("source = 'kodi'")
+                    if not clauses:
+                        raise ImportError_("Replace mode needs at least one "
+                                           "source to replace.")
+                    cursor = connection.execute(
+                        "DELETE FROM plays WHERE day >= ? AND day <= ? AND (%s)"
+                        % " OR ".join(clauses),
+                        (sessions[0]["started_at"].strftime("%Y-%m-%d"),
+                         sessions[-1]["started_at"].strftime("%Y-%m-%d")))
+                    replaced = cursor.rowcount
+
+                existing_keys, _ = _existing_index()
                 cursor = connection.execute(
-                    "DELETE FROM plays WHERE day >= ? AND day <= ? AND (%s)"
-                    % " OR ".join(clauses),
-                    (sessions[0]["started_at"].strftime("%Y-%m-%d"),
-                     sessions[-1]["started_at"].strftime("%Y-%m-%d")))
-                replaced = cursor.rowcount
+                    "INSERT INTO import_batches (imported_at, filename, format, "
+                    "mode, sessions) VALUES (?, ?, ?, ?, 0)",
+                    (datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                     meta["filename"], meta["format"], mode))
+                batch_id = cursor.lastrowid
 
-            existing_keys, _ = _existing_index()
-            cursor = connection.execute(
-                "INSERT INTO import_batches (imported_at, filename, format, "
-                "mode, sessions) VALUES (?, ?, ?, ?, 0)",
-                (datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                 meta["filename"], meta["format"], mode))
-            batch_id = cursor.lastrowid
-
-            inserted = 0
-            skipped = 0
-            dropped = 0
-            min_seconds = _min_seconds()
-            for session in sessions:
-                if _too_short(session, min_seconds):
-                    # Same rule as playlog.record(): a ten-second start is
-                    # not a viewing, whichever file it arrived in.
-                    dropped += 1
-                    continue
-                if mode == "merge" and duplicate_of(session, existing_keys):
-                    skipped += 1
-                    continue
-                started = session["started_at"]
+                inserted = 0
+                skipped = 0
+                dropped = 0
+                min_seconds = _min_seconds()
+                for session in sessions:
+                    if _too_short(session, min_seconds):
+                        # Same rule as playlog.record(): a ten-second start is
+                        # not a viewing, whichever file it arrived in.
+                        dropped += 1
+                        continue
+                    if mode == "merge" and duplicate_of(session, existing_keys):
+                        skipped += 1
+                        continue
+                    started = session["started_at"]
+                    connection.execute(
+                        "INSERT INTO plays (started_at, ended_at, day, hour, "
+                        "weekday, media, title, show, season, episode, year, "
+                        "runtime_seconds, watched_seconds, completed, source, "
+                        "device, batch_id) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                        "?, ?)",
+                        (started.strftime("%Y-%m-%dT%H:%M:%S"),
+                         session["ended_at"].strftime("%Y-%m-%dT%H:%M:%S"),
+                         started.strftime("%Y-%m-%d"),
+                         # Date-only rows get an out-of-range hour, so the clock
+                         # charts can recognise and skip them.
+                         -1 if session.get("dateonly") else started.hour,
+                         started.weekday(),
+                         session["media"], session["title"], session["show"],
+                         session["season"], session["episode"], session["year"],
+                         session["runtime_seconds"],
+                         session["watched_seconds"],
+                         # completed means what it means in playlog.record():
+                         # >= 90% of a known runtime. An unknown runtime cannot
+                         # support a completion claim, so it stores 0.
+                         1 if (session["runtime_seconds"]
+                               and session["watched_seconds"]
+                               >= session["runtime_seconds"]
+                               * playlog.COMPLETE_FRACTION) else 0,
+                         source, session.get("device"), batch_id))
+                    inserted += 1
                 connection.execute(
-                    "INSERT INTO plays (started_at, ended_at, day, hour, "
-                    "weekday, media, title, show, season, episode, year, "
-                    "runtime_seconds, watched_seconds, completed, source, "
-                    "device, batch_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                    "?, ?)",
-                    (started.strftime("%Y-%m-%dT%H:%M:%S"),
-                     session["ended_at"].strftime("%Y-%m-%dT%H:%M:%S"),
-                     started.strftime("%Y-%m-%d"),
-                     # Date-only rows get an out-of-range hour, so the clock
-                     # charts can recognise and skip them.
-                     -1 if session.get("dateonly") else started.hour,
-                     started.weekday(),
-                     session["media"], session["title"], session["show"],
-                     session["season"], session["episode"], session["year"],
-                     session["runtime_seconds"],
-                     session["watched_seconds"],
-                     # completed means what it means in playlog.record():
-                     # >= 90% of a known runtime. An unknown runtime cannot
-                     # support a completion claim, so it stores 0.
-                     1 if (session["runtime_seconds"]
-                           and session["watched_seconds"]
-                           >= session["runtime_seconds"]
-                           * playlog.COMPLETE_FRACTION) else 0,
-                     source, session.get("device"), batch_id))
-                inserted += 1
-            connection.execute(
-                "UPDATE import_batches SET sessions = ?, replaced = ? "
-                "WHERE id = ?", (inserted, replaced, batch_id))
-    finally:
-        connection.close()
+                    "UPDATE import_batches SET sessions = ?, replaced = ? "
+                    "WHERE id = ?", (inserted, replaced, batch_id))
+        finally:
+            connection.close()
     log("Imported %d sessions from %s (%s, mode=%s, %d replaced, %d "
         "duplicates skipped, %d below the minimum length)"
         % (inserted, meta["filename"], meta["format"], mode, replaced,
@@ -593,16 +611,21 @@ def batches():
 
 def delete_batch(batch_id):
     """Remove an import and every session it added. Cannot restore what a
-    replace-mode import deleted; the staging screen says so before commit."""
-    connection = _batches_connect()
-    try:
-        with connection:
-            cursor = connection.execute(
-                "DELETE FROM plays WHERE batch_id = ?", (batch_id,))
-            removed = cursor.rowcount
-            connection.execute("DELETE FROM import_batches WHERE id = ?",
-                               (batch_id,))
-    finally:
-        connection.close()
+    replace-mode import deleted; the staging screen says so before commit.
+
+    Snapshotted either side: this is the one button in the addon that
+    deletes logged sittings outright, and undoing it means going to a copy.
+    """
+    with backup.around("batch-delete"):
+        connection = _batches_connect()
+        try:
+            with connection:
+                cursor = connection.execute(
+                    "DELETE FROM plays WHERE batch_id = ?", (batch_id,))
+                removed = cursor.rowcount
+                connection.execute("DELETE FROM import_batches WHERE id = ?",
+                                   (batch_id,))
+        finally:
+            connection.close()
     log("Deleted import batch %d (%d sessions removed)" % (batch_id, removed))
     return removed

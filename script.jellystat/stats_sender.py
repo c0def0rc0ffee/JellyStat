@@ -236,6 +236,12 @@ def post(url, token, payload, ignore_ssl):
                                      headers=headers)
     context = None
     if url.startswith("https") and ignore_ssl:
+        # Deliberate - a home server with a self-signed certificate is the
+        # ordinary reason - but it means anything on the path can read the
+        # token and the payload, and alter them. Worth a line in the log
+        # rather than being quietly insecure.
+        log("Sending with TLS verification turned off: the token and "
+            "payload can be read and altered in transit.", xbmc.LOGWARNING)
         context = ssl._create_unverified_context()
     try:
         with urllib.request.urlopen(request, timeout=60,

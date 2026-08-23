@@ -483,6 +483,17 @@ def show_dashboard_info():
             "Only this machine can reach it at the moment: "
             '"Reachable from other machines" is off in settings -> '
             "Web dashboard."])
+    elif webserver.lan_refused():
+        lines.extend([
+            "",
+            "Only this machine can reach it at the moment. It is set to be "
+            "reachable from other machines, but with no password anything "
+            "on your network could read your whole viewing history and "
+            "control playback, so it is being kept to this machine until "
+            "there is one.",
+            "",
+            "Set a password in settings -> Web dashboard and the addresses "
+            "above will start working, within a few seconds."])
     if ADDON.getSetting("web_password").strip():
         lines.extend(["", "A password is set, so the page will ask for it "
                           "before showing anything."])

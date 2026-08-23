@@ -74,10 +74,13 @@ def is_due(addon, now):
     """
     if addon.getSetting("last_send_date") == now.strftime("%Y-%m-%d"):
         return False
-    if setting_int(addon, "send_when", AT_SET_TIME) == ON_KODI_LOAD:
-        return True
+    # The chosen days apply to both schedules. They used not to on Kodi
+    # load, while the settings screen still let the days be picked - so
+    # "weekdays only" was set, looked set, and sent on Saturday anyway.
     if not day_allowed(setting_int(addon, "send_days", EVERY_DAY), now):
         return False
+    if setting_int(addon, "send_when", AT_SET_TIME) == ON_KODI_LOAD:
+        return True
     return now.hour >= setting_int(addon, "send_hour", 18)
 
 

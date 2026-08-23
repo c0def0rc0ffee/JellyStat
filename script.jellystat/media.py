@@ -232,9 +232,6 @@ def fetch_image(item_id, kind="Primary", width=400):
 # Detail
 # ---------------------------------------------------------------------------
 
-def _api(path, params=None):
-    creds = core.get_credentials()
-    return core.api_get(creds["base"], creds["token"], path, params), creds
 
 
 def _person_rows(item, limit=24):
