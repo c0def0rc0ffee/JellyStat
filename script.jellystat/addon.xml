@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.jellystat" name="JellyStat" version="0.26.0" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.26.1" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -18,7 +18,15 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.26.0
+    <news lang="en_GB">v0.26.1
+Fixes for the lists added in 0.26.0.
+
+- Clicking a list now opens it as its own page, with a back link, the way a film or a show does. It used to unfold a panel underneath the index, which from anywhere but the top of the page looked like the click had done nothing at all.
+- Adding to a list takes one action instead of three. The control is a single menu: pick a list, or "New list", and it is added. Previously it made you reveal the menu, choose, and then confirm the choice you had already made.
+- Every episode now carries its own add-to-list control, so a list can hold individual episodes and not just whole series.
+- A list's page carries its own Rename and Delete, and shows when it was last changed.
+
+v0.26.0
 Lists, and Trakt exports can be handed over as the .zip they arrive in.
 
 Lists

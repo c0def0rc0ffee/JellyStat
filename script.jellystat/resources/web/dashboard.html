@@ -691,7 +691,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-weight: 400; margin-top: 3px; }
 .listrow .n { font-size: 12.5px; color: var(--ink-dim); flex: none;
   font-variant-numeric: tabular-nums; }
-.listrow .tag { font-size: 10.5px; text-transform: uppercase;
+.listrow .tag, .itemhead .tag { font-size: 10.5px; text-transform: uppercase;
   letter-spacing: .06em; color: var(--ink-dim); border: 1px solid var(--line);
   border-radius: 999px; padding: 2px 7px; flex: none; }
 .entryrow { display: flex; gap: 10px; align-items: baseline; padding: 8px 2px;
@@ -702,9 +702,18 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .entryrow .t { flex: 1; min-width: 0; }
 .entryrow .t .sub { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
 .entryrow .miss { color: var(--warn); font-size: 12px; flex: none; }
-.entryrow button { border: 0; background: transparent; color: var(--ink-dim);
+.entryrow .drop { border: 0; background: transparent; color: var(--ink-dim);
   cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
-.entryrow button:hover { color: var(--warn); }
+.entryrow .drop:hover { color: var(--warn); }
+/* Add-to-list, on item pages and on each episode card */
+.listadd select { font-size: 13px; padding: 6px 9px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2); color: inherit;
+  max-width: 100%; }
+.listadd .say { font-size: 12.5px; color: var(--ink-dim); }
+.listadd .say.warn { color: var(--warn); }
+.epcard .listadd { display: flex; gap: 8px; align-items: center;
+  margin-top: 8px; flex-wrap: wrap; }
+.epcard .listadd select { font-size: 12px; padding: 4px 7px; }
 input[type=file] { font-size: 13px; color: var(--ink-dim); max-width: 100%; }
 .stagebox { margin-top: 14px; border: 1px solid var(--line);
   border-radius: 10px; padding: 14px; background: var(--panel-2); }
@@ -996,16 +1005,6 @@ button.danger { color: var(--warn); }
         </div>
         <p class="hint" id="listnote"></p>
         <div id="listindex"></div>
-      </section>
-      <section class="panel" id="listdetailpanel" style="display:none">
-        <h2 id="listdetailname">List</h2>
-        <p class="hint" id="listdetailsub"></p>
-        <div class="filerow">
-          <button class="action" id="listrename">Rename</button>
-          <button class="action" id="listdelete">Delete list</button>
-          <button class="action" id="listclose">Close</button>
-        </div>
-        <div id="listdetail"></div>
       </section>
     </div>
 
@@ -3460,7 +3459,11 @@ function watchReconcile() {
 /* ---------- Lists ---------- */
 
 let LISTS = [];
-let LIST_OPEN = null;
+/* The set of lists, held so an item page can offer them without a request
+   per title. A show with ninety episodes draws ninety add-to-list controls,
+   and fetching the same list of lists ninety times to fill them would make
+   opening a series page noticeably slower for nothing. */
+let LIST_CACHE = null;
 
 async function listApi(path, body) {
   const opts = body === undefined
@@ -3473,16 +3476,26 @@ async function listApi(path, body) {
   return data;
 }
 
+async function listsCached(refresh) {
+  if (LIST_CACHE === null || refresh) {
+    LIST_CACHE = (await listApi("/api/lists")).lists;
+  }
+  return LIST_CACHE;
+}
+
 function listNote(text, bad) {
   const note = $("listnote");
+  if (!note) return;
   note.textContent = text || "";
   note.className = bad ? "hint warnline" : "hint";
 }
 
-async function loadLists(keepOpen) {
+/* ---- the index ---- */
+
+async function loadLists() {
   const host = $("listindex");
   try {
-    LISTS = (await listApi("/api/lists")).lists;
+    LISTS = await listsCached(true);
   } catch (err) {
     host.textContent = "";
     host.append(el("p", { class: "empty" },
@@ -3490,10 +3503,6 @@ async function loadLists(keepOpen) {
     return;
   }
   renderListIndex();
-  /* The open list is re-fetched rather than reused: adding a title to it is
-     what usually got us here, and showing the copy from before the write
-     would look like the add had failed. */
-  if (keepOpen && LIST_OPEN) openList(LIST_OPEN);
 }
 
 function renderListIndex() {
@@ -3509,10 +3518,14 @@ function renderListIndex() {
     const row = el("div", { class: "listrow" });
     const name = el("button", { class: "nm", type: "button" });
     name.append(document.createTextNode(list.name));
-    if (list.description) name.append(el("div", { class: "d" }, list.description));
+    if (list.description) {
+      name.append(el("div", { class: "d" }, list.description));
+    }
     name.addEventListener("click", () => openList(list.id));
     row.append(name);
-    if (list.source === "trakt") row.append(el("span", { class: "tag" }, "Trakt"));
+    if (list.source === "trakt") {
+      row.append(el("span", { class: "tag" }, "Trakt"));
+    }
     /* Both numbers, always. "40 titles" alone hides that fourteen of them
        are not on this server, which is the thing worth knowing about an
        imported list. */
@@ -3524,34 +3537,92 @@ function renderListIndex() {
   });
 }
 
+/* ---- one list, as its own page ---- */
+
+/* Rendered through itemShell() like a film or a show, rather than as a
+   panel that unfolds under the index. Opening it in place looked like
+   nothing had happened: the index stayed exactly where it was and the
+   list appeared below whatever you were already looking at. */
 async function openList(listId) {
-  LIST_OPEN = listId;
-  const panel = $("listdetailpanel");
-  const host = $("listdetail");
-  panel.style.display = "block";
-  host.textContent = "";
-  host.append(el("p", { class: "hint" }, "Loading…"));
+  const host = itemShell();
+  /* itemShell's own back link goes to the overview and already carries a
+     listener for it. Replacing the node rather than adding a second
+     listener, which would fire both and flick through the overview on the
+     way to the lists. */
+  const back = el("button", { class: "backlink", type: "button" },
+                  "\u2190 Back to lists");
+  back.addEventListener("click", () => {
+    showView("lists");
+    loadLists();
+  });
+  host.replaceChild(back, host.firstChild);
+  host.append(el("p", { class: "empty" }, "Loading\u2026"));
   let list;
   try {
     list = await listApi("/api/list?id=" + encodeURIComponent(listId));
   } catch (err) {
-    host.textContent = "";
-    host.append(el("p", { class: "empty" }, "Could not open that list: "
-      + err.message));
+    host.lastChild.textContent = "Could not open that list: " + err.message;
     return;
   }
-  $("listdetailname").textContent = list.name;
-  const bits = [plural(list.count, "title")];
-  if (list.count !== list.matched) {
-    bits.push((list.count - list.matched) + " not in your library yet");
+  host.lastChild.remove();
+
+  const head = el("div", { class: "itemhead" });
+  head.append(el("h2", {}, list.name));
+  if (list.source === "trakt") {
+    head.append(el("span", { class: "tag" }, "Trakt"));
   }
-  if (list.description) bits.push(list.description);
-  $("listdetailsub").textContent = bits.join(" \u2014 ");
-  host.textContent = "";
+  host.append(head);
+  if (list.description) {
+    host.append(el("p", { class: "overview" }, list.description));
+  }
+  host.append(factsRow([
+    [num(list.count), plural(list.count, "title").replace(/^\d+ /, "")],
+    [list.count === list.matched ? null : num(list.count - list.matched),
+     "not in your library yet"],
+    [fmtStamp(list.updated_at), "last changed"],
+  ]));
+
+  const bar = el("div", { class: "playbar" });
+  const rename = el("button", { class: "action", type: "button" }, "Rename");
+  rename.addEventListener("click", async () => {
+    const name = window.prompt("Rename this list", list.name);
+    if (name === null || !name.trim() || name.trim() === list.name) return;
+    try {
+      await listApi("/api/list/rename", { id: listId, name: name });
+      await listsCached(true);
+      openList(listId);
+    } catch (err) {
+      window.alert(err.message);
+    }
+  });
+  const drop = el("button", { class: "action", type: "button" },
+                  "Delete list");
+  drop.addEventListener("click", async () => {
+    /* The only thing here that cannot be undone, so it asks with the name
+       in the question rather than "are you sure", and sends the name to be
+       checked against the id. */
+    if (!window.confirm("Delete \u201c" + list.name + "\u201d and everything "
+        + "on it? This cannot be undone.")) return;
+    try {
+      await listApi("/api/list/delete", { id: listId, name: list.name });
+      await listsCached(true);
+      showView("lists");
+      loadLists();
+      listNote("Deleted \u201c" + list.name + "\u201d.");
+    } catch (err) {
+      window.alert(err.message);
+    }
+  });
+  bar.append(rename, drop);
+  host.append(bar);
+
+  const panel = el("section", { class: "panel" });
+  panel.append(el("h2", {}, "On this list"));
   if (!list.items.length) {
-    host.append(el("p", { class: "empty" },
-      "Nothing on this list yet. Open any film or show and use "
+    panel.append(el("p", { class: "empty" },
+      "Nothing on this list yet. Open any film, show or episode and use "
       + "\u201cAdd to list\u201d."));
+    host.append(panel);
     return;
   }
   list.items.forEach((entry, i) => {
@@ -3575,30 +3646,36 @@ async function openList(listId) {
     }
     const sub = [];
     if (entry.year) sub.push(entry.year);
-    if (entry.play_count) sub.push(entry.play_count + " plays");
+    if (entry.play_count) sub.push(plural(entry.play_count, "play"));
     if (entry.user_rating) sub.push("rated " + entry.user_rating);
-    if (sub.length) title.append(el("div", { class: "sub" }, sub.join(" \u00b7 ")));
+    if (sub.length) {
+      title.append(el("div", { class: "sub" }, sub.join(" \u00b7 ")));
+    }
     row.append(title);
     if (!entry.in_library) {
       row.append(el("span", { class: "miss" },
         entry.item_id ? "gone from server" : "not in your library"));
     }
-    const drop = el("button", { type: "button", title: "Remove from list" },
-      "\u00d7");
-    drop.addEventListener("click", async () => {
-      drop.disabled = true;
+    const kill = el("button", { class: "drop", type: "button",
+                                title: "Remove from list" }, "\u00d7");
+    kill.addEventListener("click", async () => {
+      kill.disabled = true;
       try {
         await listApi("/api/list/remove", { id: listId, entry: entry.id });
-        await loadLists(true);
+        await listsCached(true);
+        openList(listId);
       } catch (err) {
-        listNote("Could not remove that: " + err.message, true);
-        drop.disabled = false;
+        window.alert("Could not remove that: " + err.message);
+        kill.disabled = false;
       }
     });
-    row.append(drop);
-    host.append(row);
+    row.append(kill);
+    panel.append(row);
   });
+  host.append(panel);
 }
+
+/* ---- the index controls ---- */
 
 $("listcreate").addEventListener("click", async () => {
   const field = $("listname");
@@ -3607,8 +3684,7 @@ $("listcreate").addEventListener("click", async () => {
   try {
     const made = await listApi("/api/list/create", { name: name });
     field.value = "";
-    listNote("Created \u201c" + name + "\u201d.");
-    await loadLists();
+    await listsCached(true);
     openList(made.id);
   } catch (err) {
     listNote(err.message, true);
@@ -3627,8 +3703,9 @@ $("listattach").addEventListener("click", async () => {
     const got = await listApi("/api/list/attach", {});
     listNote(got.matched
       ? got.matched + " list entries found a title in your library."
-      : "Nothing new matched \u2014 every entry that can be matched already is.");
-    await loadLists(true);
+      : "Nothing new matched \u2014 every entry that can be matched "
+        + "already is.");
+    await loadLists();
   } catch (err) {
     listNote(err.message, true);
   } finally {
@@ -3636,97 +3713,45 @@ $("listattach").addEventListener("click", async () => {
   }
 });
 
-$("listrename").addEventListener("click", async () => {
-  if (!LIST_OPEN) return;
-  const current = $("listdetailname").textContent;
-  const name = window.prompt("Rename this list", current);
-  if (name === null || name.trim() === current) return;
-  try {
-    await listApi("/api/list/rename", { id: LIST_OPEN, name: name });
-    await loadLists(true);
-  } catch (err) {
-    listNote(err.message, true);
-  }
-});
+/* ---- add to list, from anywhere ---- */
 
-$("listdelete").addEventListener("click", async () => {
-  if (!LIST_OPEN) return;
-  const name = $("listdetailname").textContent;
-  /* Deleting a list is the only thing on this page that cannot be undone,
-     so it asks with the name in the question rather than "are you sure",
-     and the name goes to the server to be checked against the id. */
-  if (!window.confirm("Delete \u201c" + name + "\u201d and everything on it? "
-      + "This cannot be undone.")) return;
-  try {
-    await listApi("/api/list/delete", { id: LIST_OPEN, name: name });
-    LIST_OPEN = null;
-    $("listdetailpanel").style.display = "none";
-    listNote("Deleted \u201c" + name + "\u201d.");
-    await loadLists();
-  } catch (err) {
-    listNote(err.message, true);
-  }
-});
-
-$("listclose").addEventListener("click", () => {
-  LIST_OPEN = null;
-  $("listdetailpanel").style.display = "none";
-});
-
-/* A list picker for an item page.
-
-   Built lazily and left empty until it is opened: every film page would
-   otherwise fetch the whole set of lists to render a control most visits
-   never touch. */
-function listPicker(itemId) {
-  const bar = el("div", { class: "playbar" });
+/* One control, one interaction: pick a list and it is added. The first
+   version needed three clicks - reveal, choose, confirm - which is a lot of
+   ceremony for adding a film to a list, and the confirm step did nothing
+   the choice had not already said. */
+function listPicker(itemId, compact) {
+  const wrap = el("div", { class: compact ? "listadd" : "playbar listadd" });
+  const picker = el("select", { "aria-label": "Add to list" });
   const say = el("span", { class: "say" });
-  const picker = el("select");
-  picker.style.display = "none";
-  const add = el("button", { class: "action", type: "button" }, "Add");
-  add.style.display = "none";
-  const open = el("button", { class: "action", type: "button" },
-                  "Add to list\u2026");
 
-  function fail(message) {
-    say.className = "say warn";
-    say.textContent = message;
-  }
-
-  open.addEventListener("click", async () => {
-    open.disabled = true;
-    say.className = "say";
-    say.textContent = "";
-    let found;
-    try {
-      found = (await listApi("/api/lists")).lists;
-    } catch (err) {
-      open.disabled = false;
-      fail("Could not read your lists: " + err.message);
-      return;
-    }
+  function fill() {
     picker.textContent = "";
-    found.forEach((list) => {
-      picker.append(el("option", { value: String(list.id) },
-                       list.name + " (" + list.count + ")"));
+    picker.append(el("option", { value: "" }, "Add to list\u2026"));
+    (LIST_CACHE || []).forEach((list) => {
+      picker.append(el("option", { value: String(list.id) }, list.name));
     });
     picker.append(el("option", { value: "new" }, "New list\u2026"));
-    open.style.display = "none";
-    picker.style.display = "";
-    add.style.display = "";
-  });
+    picker.value = "";
+  }
 
-  add.addEventListener("click", async () => {
-    add.disabled = picker.disabled = true;
+  fill();
+  listsCached().then(fill).catch(() => {});
+  /* Refilled as it is opened, so a list made on another page in the
+     meantime is in the menu rather than missing from it. */
+  picker.addEventListener("focus", fill);
+
+  picker.addEventListener("change", async () => {
+    const choice = picker.value;
+    if (!choice) return;
+    picker.disabled = true;
     say.className = "say";
     say.textContent = "Adding\u2026";
     try {
-      let listId = picker.value;
-      if (listId === "new") {
+      let listId = choice;
+      if (choice === "new") {
         const name = window.prompt("Name the new list");
         if (name === null || !name.trim()) {
           say.textContent = "";
-          add.disabled = picker.disabled = false;
           return;
         }
         listId = (await listApi("/api/list/create", { name: name })).id;
@@ -3734,20 +3759,23 @@ function listPicker(itemId) {
       const got = await listApi("/api/list/add",
                                 { id: Number(listId), item_id: itemId });
       /* The server says whether the row was new. Reporting "added" for a
-         title that was already on the list would teach you to distrust
-         the message the one time it matters. */
+         title that was already on the list would teach you to distrust the
+         message the one time it matters. */
       say.textContent = got.added
         ? "Added to \u201c" + got.list.name + "\u201d."
         : "Already on \u201c" + got.list.name + "\u201d.";
+      await listsCached(true);
     } catch (err) {
-      fail(err.message);
+      say.className = "say warn";
+      say.textContent = err.message;
     } finally {
-      add.disabled = picker.disabled = false;
+      picker.disabled = false;
+      fill();
     }
   });
 
-  bar.append(open, picker, add, say);
-  return bar;
+  wrap.append(picker, say);
+  return wrap;
 }
 
 /* ---------- Trakt import ---------- */
@@ -5029,6 +5057,10 @@ async function fillEpisodes(seriesId, note, cards) {
       if (ep.overview) {
         body.append(el("div", { class: "ov" }, ep.overview));
       }
+      /* Per episode, not just per show: a list of "episodes to show Dad"
+         is a different thing from a list of shows, and the series-level
+         control could only ever add the whole series. */
+      if (ep.id) body.append(listPicker(ep.id, true));
       card.append(body);
       cards.append(card);
     });

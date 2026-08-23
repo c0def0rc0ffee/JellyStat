@@ -334,7 +334,9 @@ categories to import.
 **Lists** in the sidebar holds sets of titles you chose. It is the one thing
 the rest of the addon has no way to express, since a list has no property in
 common that a query could find. Make one, name it, and add anything to it
-from a film or show page.
+from a film, show or episode page: each carries an **Add to list** menu that
+also offers a new list. Clicking a list opens it as its own page, where it
+can be renamed, emptied entry by entry, or deleted.
 
 An entry keeps the title, year and provider ids it was created with, and
 matches to a library item where one exists. So a list can name titles this
