@@ -388,6 +388,15 @@ h3.steph { font-size: 14.5px; margin: 22px 0 6px;
 .playbar button[disabled] { opacity: .5; cursor: default; }
 .playbar .say { font-size: 12.5px; color: var(--ink-dim); }
 .playbar .say.bad { color: var(--warn); }
+/* The dates list breaks the bar's flex row so it reads as a panel under
+   the buttons rather than a third button's worth of squeezed text. */
+.playbar .whenbox { flex-basis: 100%; display: none; }
+.playbar .whenbox.open { display: block; background: var(--bg);
+  border-radius: 8px; padding: 9px 12px; margin: 2px 0 4px;
+  font-size: 12.5px; color: var(--ink-dim); line-height: 1.6;
+  max-height: 260px; overflow-y: auto; }
+.playbar .whenbox .one b { color: var(--ink); font-weight: 600;
+  font-variant-numeric: tabular-nums; }
 
 /* A rate row's title doubles as a link to the item page */
 .rateitem .what button {
@@ -4454,6 +4463,43 @@ function renderLibList(media, payload) {
   host.append(list);
 }
 
+/* One dated line per sitting, shared by the library rows and by the item
+   page's Dates button so both answer "when did I watch this" the same way.
+   Returns nothing; it fills the box it is handed. */
+function fillSittings(box, rows, playCount, limit, moreHint) {
+  box.textContent = "";
+  if (!rows.length) {
+    /* The play log starts when it was installed; the mirror's play
+       counter goes back further. Saying so beats an empty box. */
+    box.append(el("div", { class: "none" },
+      "Played " + plural(playCount, "time")
+      + ", but before the play log started — no individual dates were "
+      + "recorded."));
+    return;
+  }
+  rows.slice(0, limit).forEach((sitting) => {
+    const entry = el("div", { class: "one" });
+    entry.append(el("b", {}, fmtStamp(sitting.started_at)));
+    const detail = [];
+    if (sitting.season !== null && sitting.season !== undefined) {
+      detail.push("S" + String(sitting.season).padStart(2, "0") + "E"
+                  + String(sitting.episode || 0).padStart(2, "0")
+                  + " · " + sitting.title);
+    }
+    if (sitting.watched_seconds) {
+      detail.push(Math.round(sitting.watched_seconds / 60) + " min");
+    }
+    detail.push((sitting.source || "kodi")
+                + (sitting.completed ? " ✓" : ""));
+    entry.append(document.createTextNode(" — " + detail.join(" · ")));
+    box.append(entry);
+  });
+  if (rows.length > limit) {
+    box.append(el("div", { class: "none" },
+      "…and " + num(rows.length - limit) + " more; " + moreHint + "."));
+  }
+}
+
 async function toggleSittings(media, item, button, box) {
   if (box.classList.contains("open")) {
     box.classList.remove("open");
@@ -4471,39 +4517,8 @@ async function toggleSittings(media, item, button, box) {
                                  { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || response.status);
-    box.textContent = "";
-    const rows = payload.sittings || [];
-    if (!rows.length) {
-      /* The play log starts when it was installed; the mirror's play
-         counter goes back further. Saying so beats an empty box. */
-      box.append(el("div", { class: "none" },
-        "Played " + plural(item.play_count || 0, "time")
-        + ", but before the play log started — no individual dates were "
-        + "recorded."));
-    } else {
-      rows.slice(0, 40).forEach((sitting) => {
-        const entry = el("div", { class: "one" });
-        entry.append(el("b", {}, fmtStamp(sitting.started_at)));
-        const detail = [];
-        if (sitting.season !== null && sitting.season !== undefined) {
-          detail.push("S" + String(sitting.season).padStart(2, "0") + "E"
-                      + String(sitting.episode || 0).padStart(2, "0")
-                      + " · " + sitting.title);
-        }
-        if (sitting.watched_seconds) {
-          detail.push(Math.round(sitting.watched_seconds / 60) + " min");
-        }
-        detail.push((sitting.source || "kodi")
-                    + (sitting.completed ? " ✓" : ""));
-        entry.append(document.createTextNode(" — " + detail.join(" · ")));
-        box.append(entry);
-      });
-      if (rows.length > 40) {
-        box.append(el("div", { class: "none" },
-          "…and " + num(rows.length - 40) + " more; open the title for all "
-          + "of them."));
-      }
-    }
+    fillSittings(box, payload.sittings || [], item.play_count || 0, 40,
+                 "open the title for all of them");
     box.classList.add("open");
     button.textContent = "Hide";
   } catch (err) {
@@ -4892,7 +4907,31 @@ function playBar(ref) {
                       ref.show ? "+ Queue next unwatched" : "+ Queue");
   queueBtn.addEventListener("click", () => fire("queue", queueBtn));
 
-  bar.append(playBtn, queueBtn, say);
+  bar.append(playBtn, queueBtn);
+
+  /* "When have I watched this" next to the play controls, because that is
+     where the question gets asked - the full table is still further down
+     the page. The sittings are already loaded with the item, so opening
+     this costs nothing. */
+  if (ref.sittings) {
+    const when = el("button", { class: "whenbtn", type: "button" }, "Dates");
+    const box = el("div", { class: "whenbox" });
+    when.addEventListener("click", () => {
+      if (box.classList.contains("open")) {
+        box.classList.remove("open");
+        box.textContent = "";
+        when.textContent = "Dates";
+        return;
+      }
+      fillSittings(box, ref.sittings, ref.play_count || 0, 200,
+                   "see the Sittings panel below");
+      box.classList.add("open");
+      when.textContent = "Hide dates";
+    });
+    bar.append(when, box);
+  }
+
+  bar.append(say);
   return bar;
 }
 
@@ -5159,7 +5198,9 @@ async function openMovie(id) {
     [movie.present ? null : "no longer on Jellyfin", ""],
   ]));
   host.append(duplicateNote(movie));
-  host.append(playBar({ id: movie.id }));
+  host.append(playBar({ id: movie.id,
+                        sittings: movie.watched ? movie.sittings : null,
+                        play_count: movie.play_count }));
   host.append(listPicker(movie.id));
   if (!movie.watched) host.append(notWatchedNote("film"));
   host.append(castPanel(detail));
@@ -5226,7 +5267,8 @@ async function openShow(name) {
      "last watched"],
   ]));
 
-  host.append(playBar({ show: show.name }));
+  host.append(playBar({ show: show.name, sittings: show.sittings,
+                        play_count: show.plays }));
   if (show.series_id || show.id) {
     host.append(listPicker(show.series_id || show.id));
   }

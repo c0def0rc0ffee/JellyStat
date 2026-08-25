@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.jellystat" name="JellyStat" version="0.26.1" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.26.2" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -18,7 +18,13 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.26.1
+    <news lang="en_GB">v0.26.2
+A Dates button on every film and show page.
+
+- Next to Play and Queue, a Dates button opens the list of when you actually watched it: the date and clock time of each sitting, how long you watched, and where the play came from. It answers "when did I last see this" without scrolling past the cast to the Sittings table, which is still there for the full picture.
+- Titles played before the play log existed say so, rather than showing an empty list.
+
+v0.26.1
 Fixes for the lists added in 0.26.0.
 
 - Clicking a list now opens it as its own page, with a back link, the way a film or a show does. It used to unfold a panel underneath the index, which from anywhere but the top of the page looked like the click had done nothing at all.
