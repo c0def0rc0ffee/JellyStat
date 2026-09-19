@@ -65,6 +65,8 @@ Addon settings → **Display**:
 3. **Settings → Add-ons → Install from zip file** and pick the zip.
 4. Run it from **Add-ons → Program add-ons → JellyStat**.
 
+Or install the [DeliciousCoffee repository](https://github.com/c0def0rc0ffee/DeliciousCoffee) once and Kodi installs and updates it for you.
+
 Requires Kodi 19 (Matrix) or newer.
 
 ## Web dashboard
@@ -517,24 +519,32 @@ Kodi log (search `[JellyStat]`) and retried at the next hourly check.
 ```
 script.jellystat/
 ├── addon.xml            # addon manifest (script + service)
-├── main.py              # entry point, Jellyfin API + dialogs
-├── stats_sender.py      # snapshot payload + website POST
-├── webdata.py           # dashboard payload: totals, habits, recent lists
+├── main.py              # entry point: Jellyfin API and the Kodi dialogs
+├── service.py           # background service: the dashboard, plus the daily jobs
 ├── webserver.py         # the dashboard's HTTP server and password gate
-├── history.py           # daily snapshots in SQLite, for the trend charts
-├── playlog.py           # per-sitting play log (date, time, position)
+├── webdata.py           # everything the dashboard shows, as one payload
+├── screentime.py        # headline tiles and the screen time panel
+├── library.py           # a full local mirror of the watched library
+├── media.py             # artwork, cast and technical detail, fetched live
+├── playback.py          # play or queue on the Kodi box the dashboard runs on
 ├── player.py            # xbmc.Player listener that feeds the play log
+├── playlog.py           # per-sitting play log (date, time, position)
+├── history.py           # daily snapshots in SQLite, for the trend charts
 ├── importer.py          # file import: parse, stage, compare, commit
 ├── trakt.py             # Trakt export: read the .zip, parse, match ids
 ├── trakt_import.py      # Trakt staging, import modes, commit
 ├── lists.py             # named sets of titles, yours and Trakt's
-├── service.py           # background service: dashboard + daily jobs
+├── ratings.py           # your own ratings, kept in step with Jellyfin
+├── reconcile.py         # make Jellyfin's ratings agree with JellyStat's
+├── recommend.py         # recommendations and similar titles, from your own history
+├── backup.py            # automatic database snapshots around anything destructive
+├── stats_sender.py      # snapshot payload + website POST
 └── resources/
     ├── icon.png         # addon icon
-    ├── settings.xml     # server fallback, dashboard + website settings
+    ├── settings.xml     # server fallback, dashboard and website settings
+    ├── language/        # strings.po
     └── web/
         └── dashboard.html   # the whole dashboard, no external requests
-JellyStat Dist/          # versioned addon build zips
 ```
 
 ## Rebuilding the install zip
@@ -542,8 +552,17 @@ JellyStat Dist/          # versioned addon build zips
 Builds go in the `JellyStat Dist` folder, named
 `script.jellystat-<version>.zip` with the version taken from `addon.xml`
 (bump it there first). Zip entries must use forward slashes and contain the
-`script.jellystat` folder at the root. The snippet below handles both; plain
-`Compress-Archive` writes backslashes that break non-Windows Kodi:
+`script.jellystat` folder at the root, or Kodi on Linux refuses the zip.
+
+On Linux or macOS, from the project root:
+
+```bash
+zip -r "JellyStat Dist/script.jellystat-<version>.zip" script.jellystat -x '*/__pycache__/*' -x '*.pyc'
+```
+
+On Windows, `build-zip.ps1` in the project root does the same job, or use
+this snippet; plain `Compress-Archive` writes backslashes that break
+non-Windows Kodi:
 
 ```powershell
 [xml]$manifest = Get-Content script.jellystat\addon.xml -Raw
@@ -559,6 +578,6 @@ Get-ChildItem "$PWD\script.jellystat" -Recurse -File | ForEach-Object {
 $zip.Dispose()
 ```
 
-## License
+## Licence
 
 [MIT](LICENSE)
