@@ -1,0 +1,75 @@
+# Local release tooling and notes
+/publish-github.sh
+/push-source.sh
+/publish.conf
+/GITHUB-RELEASE-GUIDE.md
+/.publish-allow
+/Github repository
+/build.conf
+/build-zip.py
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# NAS thumbnail and index metadata
+@eaDir/
+
+# Convention output folders (zips distributed via GitHub Releases instead)
+/JellyStat Dist/
+/JellyStat Git/
+/JellyStat App/
+
+# Local editor and tooling state (any dot folder except .github)
+.*/
+!.github/
+
+# Archives, logs, temp files
+*.zip
+*.7z
+*.log
+*.tmp
+
+# Screenshot harness scratch: throwaway Kodi and Firefox profiles.
+tools/screenshots/.profile/
+tools/screenshots/.ffprofile/
+tools/screenshots/__pycache__/
+
+# Added 12/09/2026 (Linux packaging sweep)
+# Internal ops docs, never published
+/PROJECT_NOTES.md
+/release-mirror.conf
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Secrets, both cases because matching is case sensitive. Nothing secret
+# lives in this tree; the patterns stop one being added by accident.
+.env
+.env.*
+*credential*
+*CREDENTIAL*
+*Credential*
+*password*
+*PASSWORD*
+*Password*
+*secret*
+*SECRET*
+*Secret*
+*token*
+*TOKEN*
+*Token*
+*cred*
+*CRED*
+*sftp*
+*SFTP*
+*ftp*
+*FTP*
+*.pem
+*.key
+*.pfx
+id_rsa*
+connection.txt
+*config.local*
+*.bak

@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  <summary>
+  Add-on manifest for JellyStat: id, version, the Python dependency, the
+  script entry point (main.py) and the background service (service.py),
+  plus the store metadata: summary, description, per version news,
+  licence and icon.
+  </summary>
+-->
+<addon id="script.jellystat" name="JellyStat" version="0.26.3" provider-name="c0def0rc0ffee">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+  </requires>
+  <extension point="xbmc.python.script" library="main.py">
+    <provides>executable</provides>
+  </extension>
+  <extension point="xbmc.service" library="service.py"/>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Watch statistics and a viewing log for your Jellyfin server</summary>
+    <description lang="en_GB">Keeps a record of what you watch and shows you what is in it.
+
+Browse watched films and TV, with genre breakdowns, average ratings and duplicate-copy detection. A web dashboard, served by the addon itself, opens the same picture on your phone or laptop.
+
+Because Jellyfin keeps only a play count and a single last-played date, JellyStat keeps its own log of individual sittings, the clock time, how much was watched, and one row per viewing rather than one per title. That is what the screen-time and viewing-habit charts are built from. Plays on other devices are picked up from the server too.
+
+Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
+
+Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
+    <news lang="en_GB">v0.26.2
+A Dates button on every film and show page.
+
+- Next to Play and Queue, a Dates button opens the list of when you actually watched it: the date and clock time of each sitting, how long you watched, and where the play came from. It answers "when did I last see this" without scrolling past the cast to the Sittings table, which is still there for the full picture.
+- Titles played before the play log existed say so, rather than showing an empty list.
+
+v0.26.1
+Fixes for the lists added in 0.26.0.
+
+- Clicking a list now opens it as its own page, with a back link, the way a film or a show does. It used to unfold a panel underneath the index, which from anywhere but the top of the page looked like the click had done nothing at all.
+- Adding to a list takes one action instead of three. The control is a single menu: pick a list, or "New list", and it is added. Previously it made you reveal the menu, choose, and then confirm the choice you had already made.
+- Every episode now carries its own add-to-list control, so a list can hold individual episodes and not just whole series.
+- A list's page carries its own Rename and Delete, and shows when it was last changed.
+
+v0.26.0
+Lists, and Trakt exports can be handed over as the .zip they arrive in.
+
+Lists
+- A new Lists section. Make a list, name it, and add anything to it from a film or show page. It is the one thing the rest of the addon had no way to hold: a set of titles you chose, with no property in common that a search could find.
+- A list can name titles this server does not have. Entries keep the title, year and ids they were made with, so an imported list still names all forty films when you only hold twenty, and the rest attach themselves if those titles ever arrive. "Re-check unmatched" runs that pass on demand.
+- Hand-ordered lists keep their order.
+
+Trakt import
+- Drop the export .zip in exactly as Trakt sent it. Unpacking happens in the addon, so there is no longer any need to extract it first and pick the files out by hand. The files inside still work if you prefer.
+- Your Trakt lists, watchlist and collection come across too, as a fifth category on the same preview screen. Each one is named, and says so where it shares a name with a list you already have.
+- Each import mode now says what it does to lists as well as to plays and ratings: leave existing lists alone, add what they are missing, or, only under "Everything, including repeat plays" - replace their contents. That last one counts the entries it would delete on the card, before you press it.
+
+v0.25.3
+Same contents as 0.25.2, under a new version number. A 0.25.2 zip went out before the now playing changes were in it, and Kodi compares version numbers rather than file contents, so boxes that had already taken that first 0.25.2 would never have been offered the corrected one.
+
+v0.25.2
+Fixes for the duplicate-copy feature, which was quietly failing on most of the films it flagged.
+
+- A film held twice now says so on its own page even if you have never watched it. The library list counted copies across the whole server while the film's page counted only what had been played, so every duplicate nobody had watched was tagged in the list and then denied on the page it opened. A watched film whose second copy had never been played was missing that copy too.
+- The file details in the duplicate note now load. The path, size and quality of each copy, the whole point of the note, since they are what tells you which copy to delete, were asked for down a route that does not exist, so every copy reported that it could not be read, on a page already showing that same file's size in its header.
+- The library list lines up. Rows you had watched carried a "Dates" button and rows you had not did not, which pushed the year, rating and play counts of a watched row a button's width to the left of every other row.
+
+v0.25.1
+Follow-up to 0.25.0, for using the dashboard from a television.
+
+- When the dashboard is kept to this machine for want of a password, it now says so on screen instead of only in the log. Shown once when it changes, not at every restart.
+- The dashboard's login page is usable with a remote: the password box and the button now show clearly which one has focus, both are larger and easier to read across a room, and the keyboard offers a "Go" key.
+
+v0.25.0
+A correctness and safety release. Every finding from a full source audit is fixed.
+
+Viewing log
+- Resuming a film is now credited correctly. Previously the resume point was counted as watched time, so a film picked up part-way through and left paused could record hours nobody watched, and a film finished across two evenings could never be marked complete.
+- Trakt imports store times in your own timezone. They were being stored as UTC, which filed evening viewing under the wrong hour and, west of UTC, the wrong day, and defeated the duplicate check, so "add what is missing" quietly added plays again. Rows already imported are repaired automatically on first run, after a backup.
+- Duplicate detection now uses the 12-hour window it always documented, instead of the calendar date.
+
+Imports and backups
+- A first-ever Trakt import on a fresh install no longer fails.
+- Double-clicking Import no longer imports everything twice.
+- File imports that replace or delete play history now take a backup first, as Trakt imports already did.
+- A backup that fails part-way no longer leaves a truncated file behind that looked like a valid restore point.
+
+Ratings
+- Pushing ratings to Jellyfin no longer overwrites the dates they were originally given.
+- A rating Jellyfin accepted is no longer reported as failed when an optional extra write is refused, which had left the reconcile screen retrying the same items forever.
+- The administrator-key check now gives the right answer.
+
+Web dashboard
+- Closed a hole where a web page you visited could read your entire viewing history from the dashboard and control playback.
+- The dashboard will not open itself to the network without a password set; it serves this machine only until there is one, and says so.
+- Signing in now issues a session that expires, instead of a fixed token that worked forever.
+- Similar-titles suggestions work again; they had been failing on every request.
+
+Also: the library mirror no longer stops updating on large libraries, screen time works on a fresh install, and titles with accented capitals are matched properly instead of being logged twice.</news>
+    <platform>all</platform>
+    <license>MIT</license>
+    <assets>
+      <icon>resources/icon.png</icon>
+    </assets>
+  </extension>
+</addon>

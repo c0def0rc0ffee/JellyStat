@@ -1,0 +1,168 @@
+# Kodi Media Center language file
+# Addon Name: JellyStat
+# Addon id: script.jellystat
+# Addon Provider: c0def0rc0ffee
+msgid ""
+msgstr ""
+"Project-Id-Version: script.jellystat\n"
+"Report-Msgid-Bugs-To: \n"
+"Language: en_GB\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgctxt "#32001"
+msgid "Jellyfin server"
+msgstr ""
+
+msgctxt "#32002"
+msgid "Only needed if the Jellyfin for Kodi addon is not signed in"
+msgstr ""
+
+msgctxt "#32003"
+msgid "Server URL (e.g. http://jellyfin.local:8096)"
+msgstr ""
+
+msgctxt "#32004"
+msgid "API key (Dashboard: API Keys)"
+msgstr ""
+
+msgctxt "#32005"
+msgid "Username (blank = first user)"
+msgstr ""
+
+msgctxt "#32006"
+msgid "Ignore SSL certificate errors"
+msgstr ""
+
+msgctxt "#32010"
+msgid "Display"
+msgstr ""
+
+msgctxt "#32011"
+msgid "Genre stats: show percentages instead of counts"
+msgstr ""
+
+msgctxt "#32012"
+msgid "Summary: show average ratings"
+msgstr ""
+
+msgctxt "#32013"
+msgid "Summary: show favourite movies"
+msgstr ""
+
+msgctxt "#32014"
+msgid "Lists: show ratings"
+msgstr ""
+
+msgctxt "#32015"
+msgid "Recent window (days)"
+msgstr ""
+
+msgctxt "#32020"
+msgid "Website stats"
+msgstr ""
+
+msgctxt "#32021"
+msgid "Daily movie/TV genre snapshot (off while the URL is blank)"
+msgstr ""
+
+msgctxt "#32022"
+msgid "Website endpoint URL"
+msgstr ""
+
+msgctxt "#32023"
+msgid "Auth token (optional)"
+msgstr ""
+
+msgctxt "#32024"
+msgid "Schedule"
+msgstr ""
+
+msgctxt "#32025"
+msgid "When to send"
+msgstr ""
+
+msgctxt "#32026"
+msgid "As soon as Kodi loads"
+msgstr ""
+
+msgctxt "#32027"
+msgid "At a set time"
+msgstr ""
+
+msgctxt "#32028"
+msgid "Send at (hour, 0 to 23)"
+msgstr ""
+
+msgctxt "#32029"
+msgid "Days to send"
+msgstr ""
+
+msgctxt "#32030"
+msgid "Every day"
+msgstr ""
+
+msgctxt "#32031"
+msgid "Weekdays (Mon to Fri)"
+msgstr ""
+
+msgctxt "#32032"
+msgid "Weekends (Sat and Sun)"
+msgstr ""
+
+msgctxt "#32040"
+msgid "Web dashboard"
+msgstr ""
+
+msgctxt "#32041"
+msgid "Browse your stats from any device on the network"
+msgstr ""
+
+msgctxt "#32042"
+msgid "Enable the web dashboard"
+msgstr ""
+
+msgctxt "#32043"
+msgid "Port"
+msgstr ""
+
+msgctxt "#32044"
+msgid "Reachable from other machines"
+msgstr ""
+
+msgctxt "#32045"
+msgid "Password (optional)"
+msgstr ""
+
+msgctxt "#32046"
+msgid "Refresh data at most every (minutes)"
+msgstr ""
+
+msgctxt "#32047"
+msgid "History"
+msgstr ""
+
+msgctxt "#32048"
+msgid "Keep a daily snapshot for the over-time charts"
+msgstr ""
+
+msgctxt "#32049"
+msgid "Web dashboard address"
+msgstr ""
+
+msgctxt "#32050"
+msgid "Log each play with its date and time"
+msgstr ""
+
+msgctxt "#32051"
+msgid "Ignore sessions shorter than (minutes)"
+msgstr ""
+
+msgctxt "#32063"
+msgid "Ratings"
+msgstr ""
+
+msgctxt "#32064"
+msgid "A 9 or 10 also marks the item a favourite on Jellyfin"
+msgstr ""

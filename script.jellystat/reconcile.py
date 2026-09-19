@@ -1,0 +1,239 @@
+# -*- coding: utf-8 -*-
+"""
+<summary>
+Make Jellyfin's ratings agree with JellyStat's, or say nothing at all.
+</summary>
+<remarks>
+JellyStat is the record of what you think of a title. Jellyfin holds its own
+per-user rating, and the two drift: a Trakt import writes thousands of
+scores here that were never sent there, and JellyRate writes scores there
+that arrived here later.
+
+Drift itself is harmless. **Contradiction** is not: the same film rated 8
+in one place and 6 in the other is a question nobody can answer from the
+data. So the goal is not that both sides always hold everything, but that
+they never disagree: Jellyfin may be missing a rating, it may not hold a
+different one.
+
+Two ways to get there, both offered rather than assumed:
+
+- **push** writes JellyStat's score to Jellyfin, so the two match;
+- **clear** removes Jellyfin's score, leaving the rating only here.
+
+Both run in the background against thousands of items, reporting progress,
+because a rating is one HTTP request and three thousand of them is not
+something to do inside a page load.
+</remarks>
+"""
+
+import threading
+import time
+
+import xbmc
+
+import library
+import ratings
+
+_lock = threading.Lock()
+_job = {"state": "idle", "action": None, "done": 0, "total": 0,
+        "failed": 0, "started_at": None, "message": None}
+_worker = None
+
+
+def log(message, level=xbmc.LOGINFO):
+    """
+    <summary>
+    Write one line to Kodi's log under the JellyStat tag.
+    </summary>
+    <param name="message">Text to log.</param>
+    <param name="level">Kodi log level, info by default.</param>
+    """
+    xbmc.log("[JellyStat] %s" % message, level)
+
+
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+def survey():
+    """
+    <summary>
+    How the two sides currently compare.
+    </summary>
+    <remarks>
+    The job state is read *before* the counts, never after. A running push
+    is committing rows while this query runs, and reading the state last
+    could pair counts taken at the start of the job with a state of
+    "finished" - a page that then says "Pushed 60 of 60" while still
+    offering to push the same 60, and stops polling, so it never corrects
+    itself. Read this way round, "finished" always means the counts below
+    were taken after the last write.
+    </remarks>
+    """
+    job = progress()
+    connection = library.connect()
+    try:
+        row = connection.execute(
+            "SELECT "
+            "SUM(CASE WHEN user_rating IS NOT NULL THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN user_rating IS NOT NULL AND jf_rating IS NULL "
+            "         THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN user_rating IS NOT NULL AND jf_rating IS NOT NULL "
+            "         AND ABS(user_rating - jf_rating) >= 0.001 "
+            "         THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN user_rating IS NOT NULL AND jf_rating IS NOT NULL "
+            "         AND ABS(user_rating - jf_rating) < 0.001 "
+            "         THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN user_rating IS NULL AND jf_rating IS NOT NULL "
+            "         THEN 1 ELSE 0 END) "
+            "FROM items").fetchone()
+        examples = [
+            {"name": name, "here": here, "jellyfin": there}
+            for name, here, there in connection.execute(
+                "SELECT name, user_rating, jf_rating FROM items "
+                "WHERE user_rating IS NOT NULL AND jf_rating IS NOT NULL "
+                "AND ABS(user_rating - jf_rating) >= 0.001 "
+                "ORDER BY ABS(user_rating - jf_rating) DESC LIMIT 8")]
+    finally:
+        connection.close()
+    return {
+        "rated_here": row[0] or 0,
+        "missing_on_jellyfin": row[1] or 0,
+        "contradicting": row[2] or 0,
+        "agreeing": row[3] or 0,
+        "only_on_jellyfin": row[4] or 0,
+        "examples": examples,
+        "job": job,
+    }
+
+
+def _targets(connection, scope, action="push"):
+    """
+    <summary>
+    The items an action applies to.
+    </summary>
+    <remarks>
+    "contradicting" is the narrow fix: only where the two hold different
+    scores. "all" also sends the ones Jellyfin is simply missing, which is
+    what makes the two copies identical rather than merely consistent.
+
+    The action matters as well as the scope. Clearing concerns only rows
+    Jellyfin actually holds a rating for: a row it holds nothing for is
+    already in the state clearing would put it in. Ignoring that sent a
+    DELETE for every locally-rated title, then reported "Cleared 3000 of
+    3000" for a job that changed nothing at all.
+    </remarks>
+    """
+    if action == "clear":
+        where = "jf_rating IS NOT NULL"
+        if scope == "contradicting":
+            where += (" AND user_rating IS NOT NULL "
+                      "AND ABS(user_rating - jf_rating) >= 0.001")
+    elif scope == "contradicting":
+        where = ("user_rating IS NOT NULL AND jf_rating IS NOT NULL "
+                 "AND ABS(user_rating - jf_rating) >= 0.001")
+    else:
+        where = ("user_rating IS NOT NULL AND (jf_rating IS NULL "
+                 "OR ABS(user_rating - jf_rating) >= 0.001)")
+    return connection.execute(
+        "SELECT id, name, user_rating FROM items WHERE %s" % where).fetchall()
+
+
+# ---------------------------------------------------------------------------
+# Running
+# ---------------------------------------------------------------------------
+
+def progress():
+    """
+    <summary>
+    A copy of the current job state.
+    </summary>
+    <returns>A dict.</returns>
+    """
+    with _lock:
+        return dict(_job)
+
+
+def start(action="push", scope="all"):
+    """
+    <summary>
+    Begin a push or clear in the background. Returns the job state.
+    </summary>
+    """
+    global _worker
+    if action not in ("push", "clear"):
+        raise ValueError("Action must be push or clear.")
+    # Claimed before the target list is read, not after. The read takes a
+    # moment, and checking "is it running" in one lock and setting it in
+    # another left room for a double-clicked button to start two workers,
+    # each pushing every item, with both writing the same counters.
+    with _lock:
+        if _job["state"] == "running":
+            return dict(_job)
+        _job.update(state="running", action=action, done=0, total=0,
+                    failed=0, message=None,
+                    started_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    try:
+        connection = library.connect()
+        try:
+            targets = _targets(connection, scope, action)
+        finally:
+            connection.close()
+    except Exception:
+        with _lock:
+            _job.update(state="idle", message="Could not read the ratings.")
+        raise
+    with _lock:
+        _job.update(total=len(targets))
+    _worker = threading.Thread(target=_run, args=(action, targets),
+                               name="JellyStatReconcile")
+    _worker.daemon = True
+    _worker.start()
+    return progress()
+
+
+def _run(action, targets):
+    """
+    <summary>
+    Thread body: push or clear each target's score through ratings.rate(), counting failures and updating the job state.
+    </summary>
+    <param name="action">push or clear.</param>
+    <param name="targets">(item_id, name, score) tuples.</param>
+    <remarks>
+    A refused write is a failure here even though rate() reports it rather than raising: the whole point was to make Jellyfin stop disagreeing.
+    </remarks>
+    """
+    failed = 0
+    for index, (item_id, name, score) in enumerate(targets, 1):
+        problem = None
+        try:
+            # ratings.rate() is the one place that knows how to write a
+            # score to Jellyfin and record what happened, so reconciling
+            # goes through it rather than reimplementing the call.
+            result = ratings.rate(
+                item_id, None if action == "clear" else score,
+                push=True, keep_local=action == "clear")
+            # It reports a refused write in its result rather than raising,
+            # because for someone rating one film a server that is down
+            # must not cost them the score: it is kept here and that is
+            # not an error. For a reconcile it is: the whole point was to
+            # make Jellyfin stop disagreeing, and it still does.
+            if not result.get("synced"):
+                problem = result.get("state") or "Jellyfin did not take it"
+        except Exception as err:
+            problem = err
+        if problem is not None:
+            failed += 1
+            if failed <= 3:
+                log("Reconcile could not %s %s: %s" % (action, name, problem),
+                    xbmc.LOGWARNING)
+        with _lock:
+            _job["done"] = index
+            _job["failed"] = failed
+    with _lock:
+        _job.update(state="finished",
+                    message="%s %d of %d%s"
+                            % ("Pushed" if action == "push" else "Cleared",
+                               _job["done"] - failed, _job["total"],
+                               ", %d failed" % failed if failed else ""))
+    log("Reconcile finished: %s" % _job["message"])

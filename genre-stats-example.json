@@ -1,0 +1,603 @@
+{
+  "version": 1,
+  "generated_at": "2026-01-15T18:00:00Z",
+  "source": "main-account",
+  "windows": {
+    "last_30_days": {
+      "total": 6,
+      "plays": 7,
+      "per_day": 0.2,
+      "avg_gap_minutes": 6240,
+      "genres": [
+        {
+          "genre": "Action",
+          "count": 2,
+          "percent": 33.3
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 2,
+          "percent": 33.3
+        },
+        {
+          "genre": "Comedy",
+          "count": 1,
+          "percent": 16.7
+        },
+        {
+          "genre": "Drama",
+          "count": 1,
+          "percent": 16.7
+        },
+        {
+          "genre": "Thriller",
+          "count": 1,
+          "percent": 16.7
+        }
+      ],
+      "genres_by_plays": [
+        {
+          "genre": "Science Fiction",
+          "plays": 3,
+          "percent": 42.9
+        },
+        {
+          "genre": "Action",
+          "plays": 2,
+          "percent": 28.6
+        },
+        {
+          "genre": "Comedy",
+          "plays": 1,
+          "percent": 14.3
+        },
+        {
+          "genre": "Drama",
+          "plays": 1,
+          "percent": 14.3
+        },
+        {
+          "genre": "Thriller",
+          "plays": 1,
+          "percent": 14.3
+        }
+      ],
+      "genres_primary": [
+        {
+          "genre": "Action",
+          "count": 2,
+          "percent": 33.3
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 2,
+          "percent": 33.3
+        },
+        {
+          "genre": "Comedy",
+          "count": 1,
+          "percent": 16.7
+        },
+        {
+          "genre": "Drama",
+          "count": 1,
+          "percent": 16.7
+        }
+      ]
+    },
+    "all_time": {
+      "total": 120,
+      "plays": 144,
+      "per_day": 0.13,
+      "avg_gap_minutes": 10800,
+      "genres": [
+        {
+          "genre": "Action",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Comedy",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Drama",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Thriller",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Crime",
+          "count": 12,
+          "percent": 10.0
+        },
+        {
+          "genre": "Horror",
+          "count": 12,
+          "percent": 10.0
+        },
+        {
+          "genre": "Romance",
+          "count": 12,
+          "percent": 10.0
+        },
+        {
+          "genre": "Unknown",
+          "count": 12,
+          "percent": 10.0
+        }
+      ],
+      "genres_by_plays": [
+        {
+          "genre": "Drama",
+          "plays": 36,
+          "percent": 25.0
+        },
+        {
+          "genre": "Science Fiction",
+          "plays": 36,
+          "percent": 25.0
+        },
+        {
+          "genre": "Action",
+          "plays": 24,
+          "percent": 16.7
+        },
+        {
+          "genre": "Comedy",
+          "plays": 24,
+          "percent": 16.7
+        },
+        {
+          "genre": "Crime",
+          "plays": 24,
+          "percent": 16.7
+        },
+        {
+          "genre": "Thriller",
+          "plays": 24,
+          "percent": 16.7
+        },
+        {
+          "genre": "Horror",
+          "plays": 12,
+          "percent": 8.3
+        },
+        {
+          "genre": "Romance",
+          "plays": 12,
+          "percent": 8.3
+        },
+        {
+          "genre": "Unknown",
+          "plays": 12,
+          "percent": 8.3
+        }
+      ],
+      "genres_primary": [
+        {
+          "genre": "Action",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Comedy",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Drama",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Horror",
+          "count": 12,
+          "percent": 10.0
+        },
+        {
+          "genre": "Unknown",
+          "count": 12,
+          "percent": 10.0
+        }
+      ]
+    }
+  },
+  "movies": {
+    "last_30_days": {
+      "total": 6,
+      "plays": 7,
+      "per_day": 0.2,
+      "avg_gap_minutes": 6240,
+      "genres": [
+        {
+          "genre": "Action",
+          "count": 2,
+          "percent": 33.3
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 2,
+          "percent": 33.3
+        },
+        {
+          "genre": "Comedy",
+          "count": 1,
+          "percent": 16.7
+        },
+        {
+          "genre": "Drama",
+          "count": 1,
+          "percent": 16.7
+        },
+        {
+          "genre": "Thriller",
+          "count": 1,
+          "percent": 16.7
+        }
+      ],
+      "genres_by_plays": [
+        {
+          "genre": "Science Fiction",
+          "plays": 3,
+          "percent": 42.9
+        },
+        {
+          "genre": "Action",
+          "plays": 2,
+          "percent": 28.6
+        },
+        {
+          "genre": "Comedy",
+          "plays": 1,
+          "percent": 14.3
+        },
+        {
+          "genre": "Drama",
+          "plays": 1,
+          "percent": 14.3
+        },
+        {
+          "genre": "Thriller",
+          "plays": 1,
+          "percent": 14.3
+        }
+      ],
+      "genres_primary": [
+        {
+          "genre": "Action",
+          "count": 2,
+          "percent": 33.3
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 2,
+          "percent": 33.3
+        },
+        {
+          "genre": "Comedy",
+          "count": 1,
+          "percent": 16.7
+        },
+        {
+          "genre": "Drama",
+          "count": 1,
+          "percent": 16.7
+        }
+      ]
+    },
+    "all_time": {
+      "total": 120,
+      "plays": 144,
+      "per_day": 0.13,
+      "avg_gap_minutes": 10800,
+      "genres": [
+        {
+          "genre": "Action",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Comedy",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Drama",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Thriller",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Crime",
+          "count": 12,
+          "percent": 10.0
+        },
+        {
+          "genre": "Horror",
+          "count": 12,
+          "percent": 10.0
+        },
+        {
+          "genre": "Romance",
+          "count": 12,
+          "percent": 10.0
+        },
+        {
+          "genre": "Unknown",
+          "count": 12,
+          "percent": 10.0
+        }
+      ],
+      "genres_by_plays": [
+        {
+          "genre": "Drama",
+          "plays": 36,
+          "percent": 25.0
+        },
+        {
+          "genre": "Science Fiction",
+          "plays": 36,
+          "percent": 25.0
+        },
+        {
+          "genre": "Action",
+          "plays": 24,
+          "percent": 16.7
+        },
+        {
+          "genre": "Comedy",
+          "plays": 24,
+          "percent": 16.7
+        },
+        {
+          "genre": "Crime",
+          "plays": 24,
+          "percent": 16.7
+        },
+        {
+          "genre": "Thriller",
+          "plays": 24,
+          "percent": 16.7
+        },
+        {
+          "genre": "Horror",
+          "plays": 12,
+          "percent": 8.3
+        },
+        {
+          "genre": "Romance",
+          "plays": 12,
+          "percent": 8.3
+        },
+        {
+          "genre": "Unknown",
+          "plays": 12,
+          "percent": 8.3
+        }
+      ],
+      "genres_primary": [
+        {
+          "genre": "Action",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Comedy",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Drama",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 24,
+          "percent": 20.0
+        },
+        {
+          "genre": "Horror",
+          "count": 12,
+          "percent": 10.0
+        },
+        {
+          "genre": "Unknown",
+          "count": 12,
+          "percent": 10.0
+        }
+      ]
+    }
+  },
+  "tv": {
+    "last_30_days": {
+      "total": 20,
+      "plays": 23,
+      "per_day": 0.67,
+      "avg_gap_minutes": 1944,
+      "genres": [
+        {
+          "genre": "Comedy",
+          "count": 7,
+          "percent": 35.0
+        },
+        {
+          "genre": "Drama",
+          "count": 7,
+          "percent": 35.0
+        },
+        {
+          "genre": "Animation",
+          "count": 3,
+          "percent": 15.0
+        },
+        {
+          "genre": "Crime",
+          "count": 3,
+          "percent": 15.0
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 3,
+          "percent": 15.0
+        }
+      ],
+      "genres_by_plays": [
+        {
+          "genre": "Comedy",
+          "plays": 10,
+          "percent": 43.5
+        },
+        {
+          "genre": "Drama",
+          "plays": 7,
+          "percent": 30.4
+        },
+        {
+          "genre": "Animation",
+          "plays": 3,
+          "percent": 13.0
+        },
+        {
+          "genre": "Crime",
+          "plays": 3,
+          "percent": 13.0
+        },
+        {
+          "genre": "Science Fiction",
+          "plays": 3,
+          "percent": 13.0
+        }
+      ],
+      "genres_primary": [
+        {
+          "genre": "Comedy",
+          "count": 7,
+          "percent": 35.0
+        },
+        {
+          "genre": "Drama",
+          "count": 7,
+          "percent": 35.0
+        },
+        {
+          "genre": "Animation",
+          "count": 3,
+          "percent": 15.0
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 3,
+          "percent": 15.0
+        }
+      ]
+    },
+    "all_time": {
+      "total": 480,
+      "plays": 560,
+      "per_day": 0.69,
+      "avg_gap_minutes": 2100,
+      "genres": [
+        {
+          "genre": "Comedy",
+          "count": 160,
+          "percent": 33.3
+        },
+        {
+          "genre": "Drama",
+          "count": 160,
+          "percent": 33.3
+        },
+        {
+          "genre": "Animation",
+          "count": 80,
+          "percent": 16.7
+        },
+        {
+          "genre": "Crime",
+          "count": 80,
+          "percent": 16.7
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 80,
+          "percent": 16.7
+        }
+      ],
+      "genres_by_plays": [
+        {
+          "genre": "Comedy",
+          "plays": 240,
+          "percent": 42.9
+        },
+        {
+          "genre": "Drama",
+          "plays": 160,
+          "percent": 28.6
+        },
+        {
+          "genre": "Animation",
+          "plays": 80,
+          "percent": 14.3
+        },
+        {
+          "genre": "Crime",
+          "plays": 80,
+          "percent": 14.3
+        },
+        {
+          "genre": "Science Fiction",
+          "plays": 80,
+          "percent": 14.3
+        }
+      ],
+      "genres_primary": [
+        {
+          "genre": "Comedy",
+          "count": 160,
+          "percent": 33.3
+        },
+        {
+          "genre": "Drama",
+          "count": 160,
+          "percent": 33.3
+        },
+        {
+          "genre": "Animation",
+          "count": 80,
+          "percent": 16.7
+        },
+        {
+          "genre": "Science Fiction",
+          "count": 80,
+          "percent": 16.7
+        }
+      ]
+    }
+  }
+}
