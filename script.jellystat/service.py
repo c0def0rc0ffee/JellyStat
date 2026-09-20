@@ -61,8 +61,14 @@ SKIN_PROPERTY_NAMES = (
     "Month.Titles", "Month.Plays",
     "AllTime.Hours", "AllTime.Minutes", "AllTime.Movies", "AllTime.Episodes",
     "AllTime.Shows", "AllTime.Titles", "AllTime.Plays", "AllTime.Ratings",
+    "Week.Hours", "Week.Delta", "Week.Average", "Week.WakingPercent",
+    "Week.Movies.Hours", "Week.Shows.Hours", "Week.Measured",
     "Updated",
-)
+) + tuple("Day.%d.%s" % (n, k) for n in range(1, 8)
+          for k in ("Label", "Hours", "Minutes", "Percent", "Today")) \
+  + tuple("Daypart.%d.%s" % (n, k) for n in range(1, 5)
+          for k in ("Label", "Sessions"))
+WEEK_DAYS = 7
 
 # "When to send" setting values.
 ON_KODI_LOAD = 0
@@ -187,11 +193,67 @@ def hours_label(minutes):
     return "{0:,}h".format(hours)
 
 
+def delta_label(minutes):
+    """
+    <summary>
+    A signed reading of a minute difference, for "against the week before".
+    </summary>
+    <param name="minutes">Change in minutes, negative when less was watched.</param>
+    <returns>"+2h 10m", "-31m" or "0m".</returns>
+    """
+    minutes = int(minutes or 0)
+    sign = "-" if minutes < 0 else "+"
+    hours, rest = divmod(abs(minutes), 60)
+    if not minutes:
+        return "0m"
+    if hours:
+        return "%s%dh %02dm" % (sign, hours, rest)
+    return "%s%dm" % (sign, rest)
+
+
+def week_values(week):
+    """
+    <summary>
+    The last seven days as skin properties: totals, the daily bars and the daypart split.
+    </summary>
+    <param name="week">The dict screentime.screen_time returns for seven days.</param>
+    <returns>Dict of property name (without prefix) to string value.</returns>
+    <remarks>
+    Each day's Percent is its share of the busiest day in the window, so a
+    skin can draw the bars with a progress control without doing any
+    arithmetic itself. The figures are the play log's measured sittings,
+    so on a box whose log is young they cover only the days it has.
+    </remarks>
+    """
+    days = week["breakdown"]
+    top = max([d["minutes"] for d in days] + [1])
+    values = {
+        "Week.Hours": hours_label(week["total"]["minutes"]),
+        "Week.Delta": delta_label(week["total"]["delta"]),
+        "Week.Average": hours_label(week["daily_average"]["minutes"]),
+        "Week.WakingPercent": "%g" % week["waking"]["percent"],
+        "Week.Movies.Hours": hours_label(week["movies"]["minutes"]),
+        "Week.Shows.Hours": hours_label(week["shows"]["minutes"]),
+        "Week.Measured": "1" if week["measured"] else "",
+    }
+    names = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    for n, day in enumerate(days[:WEEK_DAYS], 1):
+        values["Day.%d.Label" % n] = names[day["weekday"]]
+        values["Day.%d.Hours" % n] = hours_label(day["minutes"])
+        values["Day.%d.Minutes" % n] = str(day["minutes"])
+        values["Day.%d.Percent" % n] = str(int(round(100.0 * day["minutes"] / top)))
+        values["Day.%d.Today" % n] = "1" if day["today"] else ""
+    for n, part in enumerate(week["dayparts"][:4], 1):
+        values["Daypart.%d.Label" % n] = part["name"]
+        values["Daypart.%d.Sessions" % n] = str(part["sessions"])
+    return values
+
+
 def publish_skin_properties(now=None):
     """
     <summary>
-    Write the headline figures (this month and all time) as JellyStat.*
-    properties on the Home window, for skins.
+    Write the headline figures (this month, all time and the last seven
+    days) as JellyStat.* properties on the Home window, for skins.
     </summary>
     <param name="now">Clock to use, for tests; the real one when omitted.</param>
     <remarks>
@@ -206,6 +268,7 @@ def publish_skin_properties(now=None):
     window = xbmcgui.Window(HOME_WINDOW_ID)
     try:
         data = screentime.tiles(now)
+        week = screentime.screen_time(WEEK_DAYS, now)
     except Exception as err:  # the loop must outlive a broken database
         stats_sender.log("Could not publish the skin properties: %s" % err,
                          xbmc.LOGWARNING)
@@ -233,6 +296,7 @@ def publish_skin_properties(now=None):
         "AllTime.Ratings": str(ever["ratings"]),
         "Updated": (now or datetime.now()).strftime("%H:%M"),
     }
+    values.update(week_values(week))
     for name, value in values.items():
         window.setProperty(SKIN_PROPERTY_PREFIX + name, value)
 

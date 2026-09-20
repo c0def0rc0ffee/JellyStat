@@ -58,10 +58,19 @@ yet read its library, so a skin can gate on one being non-empty.
 | `JellyStat.Month.Titles`, `JellyStat.AllTime.Titles` | Movies plus episodes watched |
 | `JellyStat.Month.Movies`, `JellyStat.Month.Episodes`, `JellyStat.Month.Plays` | This month's breakdown |
 | `JellyStat.AllTime.Movies`, `JellyStat.AllTime.Episodes`, `JellyStat.AllTime.Shows`, `JellyStat.AllTime.Plays`, `JellyStat.AllTime.Ratings` | All-time breakdown |
+| `JellyStat.Week.Hours`, `JellyStat.Week.Delta` | Measured viewing over the last seven days, and the change against the seven before (`+2h 10m`, `-31m`) |
+| `JellyStat.Week.Average`, `JellyStat.Week.WakingPercent` | Daily average, and that as a percentage of a sixteen hour waking day |
+| `JellyStat.Week.Movies.Hours`, `JellyStat.Week.Shows.Hours` | The week split by kind |
+| `JellyStat.Week.Measured` | `1` once the play log holds a real sitting in either window, otherwise empty |
+| `JellyStat.Day.1.Label` to `JellyStat.Day.7.Label` | Weekday names, oldest first, today last |
+| `JellyStat.Day.N.Hours`, `JellyStat.Day.N.Minutes`, `JellyStat.Day.N.Percent`, `JellyStat.Day.N.Today` | That day's viewing, its share of the busiest day (0 to 100, for drawing bars) and `1` on today's entry |
+| `JellyStat.Daypart.1.Label` to `JellyStat.Daypart.4.Label`, `JellyStat.Daypart.N.Sessions` | Morning, Afternoon, Evening, Night and the sittings started in each over the seven days |
 | `JellyStat.Updated` | Clock time of the last refresh |
 
-Hours are the same estimate the dashboard tiles use: each title's runtime
-times how often it was played, over the whole library.
+The month and all-time hours are the same estimate the dashboard tiles use:
+each title's runtime times how often it was played, over the whole library.
+The seven day figures are the play log's measured sittings, so on a box whose
+log is young they cover only the days it has.
 
 ### Display settings
 
