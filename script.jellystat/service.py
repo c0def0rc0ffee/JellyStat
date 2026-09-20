@@ -18,6 +18,9 @@ background thread of its own:
    gives the dashboard its "over time" charts. This happens whether or not a
    website endpoint is set, at the same hour as the send so a box that is on
    all day still only reads the library once for it.
+4. The headline figures published as Home window properties on every check
+   beat, so a skin can show them without touching this addon's database or
+   its web server (see publish_skin_properties).
 
 It also owns the play logger: an xbmc.Player subclass that must live for the
 whole Kodi session (Kodi only delivers callbacks while the object exists),
@@ -29,9 +32,11 @@ from datetime import datetime, timedelta
 
 import xbmc
 import xbmcaddon
+import xbmcgui
 
 import history
 import player
+import screentime
 import stats_sender
 import webdata
 import webserver
@@ -43,6 +48,21 @@ RETRY_DELAY_S = 3600
 # dashboard and the page refuses to connect" is exactly the first-run
 # experience; the daily jobs still only run on the CHECK_INTERVAL_S beat.
 SETTINGS_POLL_S = 5
+
+# Window properties for skins. Written on Kodi's Home window (id 10000),
+# which every skin can read from anywhere as
+# $INFO[Window(home).Property(JellyStat.<name>)]. The names are part of the
+# addon's public surface from 0.26.4 on: change them and every skin reading
+# them goes blank, so add rather than rename.
+HOME_WINDOW_ID = 10000
+SKIN_PROPERTY_PREFIX = "JellyStat."
+SKIN_PROPERTY_NAMES = (
+    "Month", "Month.Hours", "Month.Minutes", "Month.Movies", "Month.Episodes",
+    "Month.Titles", "Month.Plays",
+    "AllTime.Hours", "AllTime.Minutes", "AllTime.Movies", "AllTime.Episodes",
+    "AllTime.Shows", "AllTime.Titles", "AllTime.Plays", "AllTime.Ratings",
+    "Updated",
+)
 
 # "When to send" setting values.
 ON_KODI_LOAD = 0
@@ -152,6 +172,71 @@ def sync_web(addon, applied):
     return wanted
 
 
+def hours_label(minutes):
+    """
+    <summary>
+    A short reading of a minute count for a skin label.
+    </summary>
+    <param name="minutes">Estimated minutes watched.</param>
+    <returns>"12h 30m" below a hundred hours, then whole hours with a thousands separator, such as "1,234h".</returns>
+    """
+    minutes = int(minutes or 0)
+    hours, rest = divmod(minutes, 60)
+    if hours < 100:
+        return "%dh %02dm" % (hours, rest)
+    return "{0:,}h".format(hours)
+
+
+def publish_skin_properties(now=None):
+    """
+    <summary>
+    Write the headline figures (this month and all time) as JellyStat.*
+    properties on the Home window, for skins.
+    </summary>
+    <param name="now">Clock to use, for tests; the real one when omitted.</param>
+    <remarks>
+    The figures are the tiles the dashboard shows, from screentime.tiles():
+    titles counted and hours estimated from runtime times plays, so they
+    reach back over the whole library. With no plays recorded at all the
+    properties are cleared rather than published as zeroes, so a skin that
+    gates on a non-empty property shows nothing on a box that has not yet
+    read its library. A failure is logged and never reaches the loop.
+    </remarks>
+    """
+    window = xbmcgui.Window(HOME_WINDOW_ID)
+    try:
+        data = screentime.tiles(now)
+    except Exception as err:  # the loop must outlive a broken database
+        stats_sender.log("Could not publish the skin properties: %s" % err,
+                         xbmc.LOGWARNING)
+        return
+    month, ever = data["this_month"], data["all_time"]
+    if not ever["plays"]:
+        for name in SKIN_PROPERTY_NAMES:
+            window.clearProperty(SKIN_PROPERTY_PREFIX + name)
+        return
+    values = {
+        "Month": data["month_label"],
+        "Month.Hours": hours_label(month["minutes"]),
+        "Month.Minutes": str(int(month["minutes"])),
+        "Month.Movies": str(month["movies"]),
+        "Month.Episodes": str(month["episodes"]),
+        "Month.Titles": str(month["movies"] + month["episodes"]),
+        "Month.Plays": str(month["plays"]),
+        "AllTime.Hours": hours_label(ever["minutes"]),
+        "AllTime.Minutes": str(int(ever["minutes"])),
+        "AllTime.Movies": str(ever["movies"]),
+        "AllTime.Episodes": str(ever["episodes"]),
+        "AllTime.Shows": str(ever["shows"]),
+        "AllTime.Titles": str(ever["movies"] + ever["episodes"]),
+        "AllTime.Plays": str(ever["plays"]),
+        "AllTime.Ratings": str(ever["ratings"]),
+        "Updated": (now or datetime.now()).strftime("%H:%M"),
+    }
+    for name, value in values.items():
+        window.setProperty(SKIN_PROPERTY_PREFIX + name, value)
+
+
 class Monitor(xbmc.Monitor):
     """
     <summary>
@@ -188,7 +273,7 @@ def run():
     Service entry point: start the play logger and the dashboard, wait out the startup delay, then loop until Kodi exits.
     </summary>
     <remarks>
-    Each pass restarts the dashboard when its settings changed, runs the daily send when it is due (backing off after a failure), records the day's snapshot, and stops cleanly on abort.
+    Each pass restarts the dashboard when its settings changed, republishes the skin properties, runs the daily send when it is due (backing off after a failure), records the day's snapshot, and stops cleanly on abort.
     </remarks>
     """
     monitor = Monitor()
@@ -225,6 +310,7 @@ def run():
         since_jobs = 0
         now = datetime.now()
         applied = sync_web(addon, applied)
+        publish_skin_properties(now)
 
         if (addon.getSetting("endpoint_url").strip() and is_due(addon, now)
                 and (retry_after is None or now >= retry_after)):

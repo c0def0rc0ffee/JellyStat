@@ -41,6 +41,28 @@ Run it from **Add-ons → Program add-ons → JellyStat**:
 
 "Last 30 days" is based on each item's last-played date reported by Jellyfin.
 
+### For skins: the headline figures as window properties
+
+From 0.26.4 the background service publishes the dashboard's headline tiles
+as properties on Kodi's Home window, refreshed every five minutes, so a skin
+can show them anywhere with `$INFO[Window(home).Property(JellyStat.<name>)]`.
+Nothing else is needed: no database access, no web dashboard, and the
+properties are cleared rather than published as zeroes on a box that has not
+yet read its library, so a skin can gate on one being non-empty.
+
+| Property | Value |
+|---|---|
+| `JellyStat.Month` | Name of the current month |
+| `JellyStat.Month.Hours`, `JellyStat.AllTime.Hours` | Estimated viewing, `12h 30m` below a hundred hours, then `1,234h` |
+| `JellyStat.Month.Minutes`, `JellyStat.AllTime.Minutes` | The same as a plain minute count |
+| `JellyStat.Month.Titles`, `JellyStat.AllTime.Titles` | Movies plus episodes watched |
+| `JellyStat.Month.Movies`, `JellyStat.Month.Episodes`, `JellyStat.Month.Plays` | This month's breakdown |
+| `JellyStat.AllTime.Movies`, `JellyStat.AllTime.Episodes`, `JellyStat.AllTime.Shows`, `JellyStat.AllTime.Plays`, `JellyStat.AllTime.Ratings` | All-time breakdown |
+| `JellyStat.Updated` | Clock time of the last refresh |
+
+Hours are the same estimate the dashboard tiles use: each title's runtime
+times how often it was played, over the whole library.
+
 ### Display settings
 
 Addon settings → **Display**:
