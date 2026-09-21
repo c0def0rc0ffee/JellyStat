@@ -7,7 +7,7 @@
   licence and icon.
   </summary>
 -->
-<addon id="script.jellystat" name="JellyStat" version="0.26.5" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.26.6" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -26,7 +26,12 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.26.5
+    <news lang="en_GB">v0.26.6
+A new icon.
+
+- The add-on icon is now a film reel drawn as a chart of films against episodes, in the dashboard's own colours, replacing the lettered tile. Nothing else changes.
+
+v0.26.5
 More for skins: the last seven days.
 
 - The JellyStat.* Home window properties now also carry the screen-time panel's last seven days: the total and its change against the week before, the daily average and its share of waking hours, movies against shows, one entry per day with a label, hours and a percentage of the busiest day for drawing bars, and sittings by time of day. The Functional skin's Stats page is built on them.
