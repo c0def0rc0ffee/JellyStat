@@ -12,7 +12,7 @@ dict. A fake add-on runs on a real loopback port and records every request it
 gets, so the test sees what actually crossed the wire, not what the code meant
 to send. Exits non zero when a check fails.
 
-Not yet run by build-zip.py, which has no test gate (Packaging.md, 7.2 gates).
+The build does not run it yet, so run it by hand before every release.
 
 Usage:
     python3 tests/test_addon_api.py

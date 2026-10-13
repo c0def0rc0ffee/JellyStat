@@ -7,7 +7,7 @@
   licence and icon.
   </summary>
 -->
-<addon id="script.jellystat" name="JellyStat" version="0.28.0" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.28.1" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -26,7 +26,10 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.28.0
+    <news lang="en_GB">v0.28.1
+Housekeeping release: a comment in the source was reworded. Nothing changes in the add-on.
+
+v0.28.0
 JellyRate on the Add-ons page, and two fixes.
 
 - The Add-ons page now manages JellyRate 1.5.0 too: its settings open as one form, and its recently played titles can be re-rated from a phone or laptop.
