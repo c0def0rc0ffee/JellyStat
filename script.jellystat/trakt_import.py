@@ -118,7 +118,7 @@ MODES = {
                  "logged rather than dropping them, and replaces the "
                  "contents of any list whose name matches rather than "
                  "merging into it. For when Trakt holds rewatches this box "
-                 "recorded once \u2014 it will double up anything that "
+                 "recorded once. It will double up anything that "
                  "really was the same viewing, and anything you added to a "
                  "list here by hand will be gone.",
         "plays_skip_duplicates": False,

@@ -413,9 +413,10 @@ hand keep their order.
 ### Add-ons
 
 **Add-ons** in the sidebar manages other add-ons on the same Kodi that offer
-the shared add-on API. Engage is the first: its slots can be listed, added,
-edited and deleted here, and backed up or restored, without picking up the
-remote. The page is built entirely from what each add-on says about itself,
+the shared add-on API. Engage's slots can be listed, added, edited and
+deleted here, and backed up or restored, without picking up the remote.
+JellyRate offers its settings as one form and its recently played titles for
+re-rating. The page is built entirely from what each add-on says about itself,
 so another add-on that offers the API appears here with no change to
 JellyStat.
 

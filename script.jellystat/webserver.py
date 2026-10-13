@@ -594,7 +594,7 @@ class Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").strip()
         return urlparse(origin).netloc != host
 
-    def _drain(self):
+    def _drain_announced(self):
         """
         <summary>
         Read and discard an announced request body.
@@ -604,6 +604,12 @@ class Handler(BaseHTTPRequestHandler):
         is a keep-alive server: leaving it there means the next request on
         that connection starts part-way through the last one's payload and
         is parsed as nonsense.
+
+        It was called _drain until 13/10/2026, when it turned out a second
+        _drain(length) further down the class had replaced it: Python keeps
+        only the last definition of a name, so every zero argument call
+        raised TypeError and the refused browser saw a dropped connection
+        instead of the 403 or 401. The two now have different names.
         </remarks>
         """
         try:
@@ -627,7 +633,7 @@ class Handler(BaseHTTPRequestHandler):
             self._reject_host()
             return
         if self._cross_origin():
-            self._drain()
+            self._drain_announced()
             self._send_json(403, {"error": "Cross-origin requests are not "
                                            "accepted."})
             return
@@ -640,7 +646,7 @@ class Handler(BaseHTTPRequestHandler):
         # routes, rather than part-way down the list.
         password = self._password()
         if password and not self._authorised(password):
-            self._drain()
+            self._drain_announced()
             self._send_json(401, {"error": "Password required."})
             return
         if path.startswith("/api/addons/"):

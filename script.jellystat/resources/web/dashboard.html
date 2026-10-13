@@ -2278,7 +2278,7 @@ function renderStaging() {
   if (!STAGED) return;
   const s = STAGED;
   const box = el("div", { class: "stagebox" });
-  box.append(el("h3", {}, s.filename + " \u2014 recognised as " + s.format));
+  box.append(el("h3", {}, s.filename + ": recognised as " + s.format));
 
   const facts = el("div", { class: "facts" });
   facts.append(
@@ -2314,7 +2314,7 @@ function renderStaging() {
       { label: "Started", cell: (r) => r.started_at },
       { label: "Title", cell: (r) => (r.show ? r.show + " \u00b7 " : "") + r.title },
       { label: "Type", cell: (r) => r.media },
-      { label: "Device", cell: (r) => r.device || "\u2013" },
+      { label: "Device", cell: (r) => r.device || "n/a" },
     ], s.sample);
     const wrap = el("div", { class: "scroll" });
     wrap.style.maxHeight = "200px";
@@ -2342,9 +2342,9 @@ function renderStaging() {
     return label;
   };
   opts.append(
-    mkRadio("merge", "Merge \u2014 add only what is new ("
+    mkRadio("merge", "Merge: add only what is new ("
       + s.compare.new_sessions.toLocaleString() + " plays), touch nothing", true),
-    mkRadio("replace", "Replace \u2014 this file wins for "
+    mkRadio("replace", "Replace: this file wins for "
       + s.date_from + " \u2192 " + s.date_to));
   box.append(opts);
 
@@ -2466,7 +2466,7 @@ async function loadBatches() {
       { label: "When", cell: (r) => fmtStamp(r.imported_at) },
       { label: "File", cell: (r) => r.filename + " (" + r.format + ")" },
       { label: "Plays", num: true, cell: (r) => num(r.sessions) },
-      { label: "Covers", cell: (r) => r.from ? r.from + " \u2192 " + r.to : "\u2013" },
+      { label: "Covers", cell: (r) => r.from ? r.from + " \u2192 " + r.to : "n/a" },
       { label: "", cell: (r) => {
           const btn = el("button", { class: "action danger" }, "Remove");
           btn.addEventListener("click", async () => {
@@ -4515,7 +4515,7 @@ $("listattach").addEventListener("click", async () => {
     const got = await listApi("/api/list/attach", {});
     listNote(got.matched
       ? got.matched + " list entries found a title in your library."
-      : "Nothing new matched \u2014 every entry that can be matched "
+      : "Nothing new matched. Every entry that can be matched "
         + "already is.");
     await loadLists();
   } catch (err) {
@@ -4840,16 +4840,26 @@ async function openResource(addon, resource, note) {
   }
   loading.remove();
   const state = { addon: addon, resource: resource, schema: schema, etag: listing.etag };
+  const items = (listing.data && listing.data.items) || [];
 
-  const bar = el("div", { class: "playbar" });
-  const add = el("button", { type: "button", class: "primary" },
-                 "Add " + (resource.label_one || "one").toLowerCase());
-  add.addEventListener("click", () => openRecord(state, null));
-  bar.append(add);
-  host.append(bar);
+  /* A single record resource (an add-on's settings, say) has nothing to
+     choose between, so it opens straight on its form. */
+  if (resource.single) {
+    if (items.length) openRecord(state, items[0], note);
+    else host.append(el("p", { class: "empty" }, addon.name + " sent nothing to show."));
+    return;
+  }
+
+  if (resource.create !== false) {
+    const bar = el("div", { class: "playbar" });
+    const add = el("button", { type: "button", class: "primary" },
+                   "Add " + (resource.label_one || "one").toLowerCase());
+    add.addEventListener("click", () => openRecord(state, null));
+    bar.append(add);
+    host.append(bar);
+  }
 
   const panel = el("section", { class: "panel" });
-  const items = (listing.data && listing.data.items) || [];
   if (!items.length) {
     panel.append(el("p", { class: "empty" }, "None yet."));
   }
@@ -4868,6 +4878,10 @@ async function openResource(addon, resource, note) {
     /* "enabled" is the one field name the page reads by convention (spec
        7.2): a record switched off says so in the list. */
     if (record.enabled === false) row.append(el("span", { class: "tag" }, "Off"));
+    if (resource.delete === false) {
+      panel.append(row);
+      return;
+    }
     const kill = el("button", { class: "drop", type: "button",
                                 title: "Delete" }, "\u00d7");
     kill.addEventListener("click", async () => {
@@ -4875,8 +4889,14 @@ async function openResource(addon, resource, note) {
           + addon.name + "? This cannot be undone.")) return;
       kill.disabled = true;
       try {
+        /* With record scoped ETags (spec 6) the list carries none, so the
+           record's own is read first. */
+        let etag = state.etag;
+        if (resource.etag === "record") {
+          etag = (await addonCall(addon.id, "/" + resource.name + "/" + record.id)).etag;
+        }
         await addonCall(addon.id, "/" + resource.name + "/" + record.id,
-                        "DELETE", undefined, state.etag);
+                        "DELETE", undefined, etag);
         openResource(addon, resource, "Deleted \u201c" + name.textContent + "\u201d.");
       } catch (err) {
         kill.disabled = false;
@@ -4997,7 +5017,7 @@ function addonControl(state, field, values, changed) {
     return { node: input };
   }
   if (field.type === "integer") {
-    const input = el("input", { type: "number", step: "1" });
+    const input = el("input", { type: "number", step: String(field.step || 1) });
     if (field.min !== undefined) input.setAttribute("min", String(field.min));
     if (field.max !== undefined) input.setAttribute("max", String(field.max));
     input.value = value === undefined || value === null ? "" : String(value);
@@ -5241,6 +5261,8 @@ function addonPicks(state, field, values, set) {
  * </summary>
  * <param name="state">The resource page state.</param>
  * <param name="record">The record from the list, or null to add one.</param>
+ * <param name="note">A line to show above the form, such as what was just
+ * saved, or undefined.</param>
  * <remarks>
  * The record is read again first, so the form and the ETag it saves against
  * are as fresh as possible. Only the fields shown are sent: a hidden field
@@ -5248,17 +5270,22 @@ function addonPicks(state, field, values, set) {
  * monthly and back get its old days again.
  * </remarks>
  */
-async function openRecord(state, record) {
+async function openRecord(state, record, note) {
   const { addon, resource, schema } = state;
   const host = itemShell();
-  addonBackLink(host, "Back to " + (resource.label || resource.name).toLowerCase(),
-                () => openResource(addon, resource));
+  /* A single record has no list to go back to. */
+  const leave = resource.single
+    ? () => { showView("addons"); loadAddons(); }
+    : () => openResource(addon, resource);
+  addonBackLink(host, resource.single ? "Back to add-ons"
+    : "Back to " + (resource.label || resource.name).toLowerCase(), leave);
   const isNew = record === null;
   const head = el("div", { class: "itemhead" });
   head.append(el("h2", {}, isNew ? "New " + (resource.label_one || "record").toLowerCase()
     : String(record[resource.title_field] || record.id)));
   head.append(el("span", { class: "tag" }, addon.name));
   host.append(head);
+  if (note) host.append(el("p", { class: "hint" }, note));
   const loading = el("p", { class: "empty" }, "Loading\u2026");
   host.append(loading);
 
@@ -5331,7 +5358,7 @@ async function openRecord(state, record) {
   const save = el("button", { type: "button", class: "primary" }, "Save");
   const cancel = el("button", { type: "button" }, "Cancel");
   const say = el("span", { class: "say" });
-  cancel.addEventListener("click", () => openResource(addon, resource));
+  cancel.addEventListener("click", leave);
   save.addEventListener("click", async () => {
     rows.forEach(({ row }) => {
       row.classList.remove("bad");
@@ -5351,7 +5378,9 @@ async function openRecord(state, record) {
       const path = "/" + resource.name + (isNew ? "" : "/" + record.id);
       const done = await addonCall(addon.id, path, isNew ? "POST" : "PUT", body, etag);
       const name = done.data && done.data[resource.title_field];
-      openResource(addon, resource, "Saved" + (name ? " \u201c" + name + "\u201d" : "") + ".");
+      const saved = "Saved" + (name ? " \u201c" + name + "\u201d" : "") + ".";
+      if (resource.single) openRecord(state, done.data, saved);
+      else openResource(addon, resource, saved);
     } catch (err) {
       save.disabled = false;
       say.className = "say bad";
@@ -5466,12 +5495,12 @@ $("traktstage").addEventListener("click", async () => {
          report that is the sum of two exports with nothing on screen
          saying so. */
       if (zips.length > 1 || files.length > zips.length) {
-        throw new Error("Select either one .zip, or the .json files from "
-          + "inside it \u2014 not both at once.");
+        throw new Error("Select either one .zip or the .json files from "
+          + "inside it, not both at once.");
       }
       host.append(el("p", { class: "hint" },
-        "Sending " + zips[0].name + " and matching against your library "
-        + "\u2014 this reads your whole film catalogue and can take a "
+        "Sending " + zips[0].name + " and matching it against your library. "
+        + "This reads your whole film catalogue and can take a "
         + "minute."));
       const response = await fetch("/api/trakt/stage-zip", {
         method: "POST",
@@ -5637,7 +5666,7 @@ function renderTraktReport() {
   host.append(el("h3", { class: "steph" }, "How should it be imported?"));
   host.append(el("p", { class: "hint" },
     "Every option adds what JellyStat is missing. They differ only in what "
-    + "they do to what it already holds \u2014 the counts below are for your "
+    + "they do to what it already holds. The counts below are for your "
     + "data, not examples. A backup is taken either side whichever you pick, "
     + "and imported ratings stay in JellyStat rather than being written to "
     + "Jellyfin."));
@@ -5856,8 +5885,8 @@ function renderTraktOutcome(result, token) {
       num(unmatched) + " row" + (unmatched === 1 ? "" : "s")
       + " could not be matched to anything in your library, so "
       + (unmatched === 1 ? "it was" : "they were") + " left out. Usually "
-      + "these are episodes Trakt numbers differently from your server \u2014 "
-      + "specials counted into a season, or a show split into parts. The "
+      + "these are episodes Trakt numbers differently from your server, such "
+      + "as specials counted into a season, or a show split into parts. The "
       + "list names each one so you can look them up."));
     const link = el("a", { class: "action",
                            href: "/api/trakt/unmatched?token="
@@ -6809,7 +6838,9 @@ function castPanel(detail) {
     if (person.image) {
       card.append(art(person.id, "Primary", 200, "", person.name));
     } else {
-      card.append(el("div", { class: "noface" }, "\u2014"));
+      /* The person's initial stands in for a photo they do not have. */
+      card.append(el("div", { class: "noface" },
+                     (person.name || "?").trim().charAt(0).toUpperCase()));
     }
     card.append(el("div", { class: "who" }, person.name));
     card.append(el("div", { class: "role" },
