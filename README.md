@@ -410,6 +410,22 @@ than dropped, and they attach themselves if those titles ever arrive.
 **Re-check unmatched** runs that pass on demand. Lists that were ordered by
 hand keep their order.
 
+### Add-ons
+
+**Add-ons** in the sidebar manages other add-ons on the same Kodi that offer
+the shared add-on API. Engage is the first: its slots can be listed, added,
+edited and deleted here, and backed up or restored, without picking up the
+remote. The page is built entirely from what each add-on says about itself,
+so another add-on that offers the API appears here with no change to
+JellyStat.
+
+Each add-on checks every change itself, exactly as its own screens in Kodi
+would, and an edit made to something that was changed in Kodi meanwhile is
+refused rather than saved over it. The add-ons listen on the Kodi box only;
+everything reaches them through this dashboard, behind its password. Anyone
+who can open the dashboard can make these changes, so set a password if that
+is not everyone in the house.
+
 ### Jellyfin agreement
 
 JellyStat holds your score; Jellyfin keeps its own copy and the two drift,

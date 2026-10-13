@@ -34,6 +34,7 @@ import xbmc
 import xbmcaddon
 import xbmcvfs
 
+import addon_api
 import backup
 import history
 import importer
@@ -479,7 +480,11 @@ class Handler(BaseHTTPRequestHandler):
         the page showing a connection error rather than the reason.
         </remarks>
         """
-        if route.path == "/api/data":
+        if route.path == "/api/addons":
+            self._send_json(200, addon_api.list_addons())
+        elif route.path.startswith("/api/addons/"):
+            self._serve_addon("GET", route)
+        elif route.path == "/api/data":
             self._serve_data(parse_qs(route.query))
         elif route.path == "/api/history":
             self._serve_history(parse_qs(route.query))
@@ -638,6 +643,9 @@ class Handler(BaseHTTPRequestHandler):
             self._drain()
             self._send_json(401, {"error": "Password required."})
             return
+        if path.startswith("/api/addons/"):
+            self._serve_addon("POST", urlparse(self.path))
+            return
         if path == "/api/rate":
             self._serve_rate()
             return
@@ -682,6 +690,118 @@ class Handler(BaseHTTPRequestHandler):
             self._import_delete()
         else:
             self._send(404, "Not found", "text/plain; charset=utf-8")
+
+    def do_PUT(self):
+        """
+        <summary>
+        Route a PUT. Only the add-on API takes one: it edits a record in another add-on.
+        </summary>
+        """
+        if not self._write_refused():
+            self._serve_addon_write("PUT")
+
+    def do_DELETE(self):
+        """
+        <summary>
+        Route a DELETE. Only the add-on API takes one: it removes a record in another
+        add-on.
+        </summary>
+        """
+        if not self._write_refused():
+            self._serve_addon_write("DELETE")
+
+    def _write_refused(self):
+        """
+        <summary>
+        Run the gates every state changing request passes, and answer the request when
+        one refuses it.
+        </summary>
+        <returns>True when the request was refused and answered here.</returns>
+        <remarks>
+        The same three gates as do_POST, in the same order: the Host pin, the cross
+        origin check, the password. A refused request has its announced body read and
+        thrown away first, because this is a keep alive server and a body left in the
+        socket would be parsed as the next request. PUT and DELETE always preflight
+        when cross origin, so the origin check is a second wall here, kept so all three
+        write methods are refused by exactly the same rules.
+        </remarks>
+        """
+        if not _host_allowed(self.headers.get("Host")):
+            self._reject_host()
+            return True
+        refusal = None
+        if self._cross_origin():
+            refusal = (403, {"error": "Cross-origin requests are not accepted."})
+        else:
+            password = self._password()
+            if password and not self._authorised(password):
+                refusal = (401, {"error": "Password required."})
+        if refusal is None:
+            return False
+        try:
+            self._drain(int(self.headers.get("Content-Length") or 0))
+        except ValueError:
+            self.close_connection = True
+        self._send_json(*refusal)
+        return True
+
+    def _serve_addon_write(self, method):
+        """
+        <summary>
+        Pass an authorised PUT or DELETE to the add-on API, or answer 404 for any other path.
+        </summary>
+        <param name="method">'PUT' or 'DELETE'.</param>
+        """
+        route = urlparse(self.path)
+        if route.path.startswith("/api/addons/"):
+            self._serve_addon(method, route)
+        else:
+            self._drain(int(self.headers.get("Content-Length") or 0))
+            self._send_json(404, {"error": "Unknown endpoint."})
+
+    def _serve_addon(self, method, route):
+        """
+        <summary>
+        Pass one authorised request through to another add-on's API (addon_api.forward).
+        </summary>
+        <param name="method">The HTTP method.</param>
+        <param name="route">The parsed URL.</param>
+        <remarks>
+        Called only after the Host pin, the cross origin check and the password have
+        passed. A body over addon_api.MAX_BODY is drained and refused before it is read
+        into memory. The add-on's own status, body and the three passed through headers
+        come back as they are; errors raised here use the add-on API's error shape.
+        </remarks>
+        """
+        body = None
+        if method in ("POST", "PUT"):
+            try:
+                body = self._read_body(addon_api.MAX_BODY)
+            except importer.ImportError_:
+                self._send_json(413, addon_api.ProxyError(
+                    413, "too_large", "That is larger than %d bytes."
+                    % addon_api.MAX_BODY).payload())
+                return
+            except ValueError:
+                # A Content-Length that is not a number: nothing can be read safely.
+                self.close_connection = True
+                self._send_json(400, addon_api.ProxyError(
+                    400, "bad_request", "The request had no readable length.").payload())
+                return
+        try:
+            status, data, headers = addon_api.forward(
+                route.path[len("/api/addons/"):], route.query, method, body, self.headers)
+        except addon_api.ProxyError as err:
+            self._send_json(err.status, err.payload())
+            return
+        content_type = "application/json; charset=utf-8"
+        extra = []
+        for name, value in headers:
+            if name == "Content-Type":
+                content_type = value
+            else:
+                extra.append((name, value))
+        self._send(status, data, content_type, extra)
 
     def _read_body(self, limit=importer.MAX_BYTES):
         """

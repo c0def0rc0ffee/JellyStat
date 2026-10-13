@@ -748,6 +748,44 @@ button.primary { background: var(--accent); border-color: var(--accent);
   color: #fff; }
 button.danger { color: var(--warn); }
 
+/* Add-ons: other add-ons on this Kodi, managed through their own API */
+.addoncard { padding: 12px 2px; border-bottom: 1px solid var(--line); }
+.addoncard:last-child { border-bottom: 0; }
+.addoncard .hd { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.addoncard h3 { margin: 0; font-size: 15px; }
+.addoncard .ver { font-size: 12px; color: var(--ink-dim); }
+.addoncard .hint { margin: 6px 0 0; }
+label.restorebtn {
+  display: inline-block; border: 1px solid var(--line); background: var(--panel);
+  color: var(--ink); border-radius: 999px; padding: 7px 15px; font-size: 13px;
+  cursor: pointer;
+}
+label.restorebtn:hover { background: var(--panel-2); }
+label.restorebtn input { display: none; }
+.entryrow .nm { font-size: 13.5px; font-weight: 600; text-align: left;
+  background: none; border: 0; color: inherit; cursor: pointer; padding: 0; }
+.entryrow .nm:hover { color: var(--accent); }
+.entryrow .drop[disabled] { opacity: .35; cursor: default; }
+.fieldrow { margin-bottom: 18px; }
+.fieldrow h3 { margin: 0 0 4px; font-size: 13.5px; }
+.fieldrow .hint { margin: 0 0 8px; font-size: 12.5px; color: var(--ink-dim); }
+.fieldrow input[type=text], .fieldrow input[type=number],
+.fieldrow input[type=time], .fieldrow input[type=date], .fieldrow select {
+  font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2); color: inherit;
+  max-width: 100%; }
+.fieldrow input[type=text] { width: 420px; }
+.fieldrow .checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.fieldrow label.check { display: inline-flex; gap: 6px; align-items: center;
+  font-size: 13px; cursor: pointer; }
+.fieldrow .ro { font-size: 13px; white-space: pre-wrap; margin: 0; }
+.fieldrow .err { color: var(--warn); font-size: 12.5px; margin: 6px 0 0; }
+.fieldrow .err:empty { display: none; }
+.fieldrow.bad input, .fieldrow.bad select { border-color: var(--warn); }
+.picks .filerow { margin-top: 10px; }
+.pickresults { margin-top: 8px; max-height: 300px; overflow-y: auto; }
+.pickresults .action { margin-bottom: 6px; }
+
 /* States */
 #error { display: none; background: var(--panel); border: 1px solid var(--warn);
   color: var(--warn); border-radius: var(--radius); padding: 16px;
@@ -794,6 +832,9 @@ button.danger { color: var(--warn); }
     <button data-view="lists">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
       Lists</button>
+    <button data-view="addons">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3.5h5v4h4v5h-4v4h-5v-4h-4v-5h4z"/><path d="M12 16.5v4"/></svg>
+      Add-ons</button>
     <button data-view="data">
       <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/></svg>
       Data</button>
@@ -1022,6 +1063,19 @@ button.danger { color: var(--warn); }
         </div>
         <p class="hint" id="listnote"></p>
         <div id="listindex"></div>
+      </section>
+    </div>
+
+    <div id="view-addons" style="display:none">
+      <section class="panel">
+        <h2>Add-ons</h2>
+        <p class="hint">Other add-ons on this Kodi that can be managed from
+          here, such as Engage's slots. Each add-on checks every change itself,
+          exactly as its own screens in Kodi would, and refuses a change made
+          to something that was altered in Kodi meanwhile. Anyone who can open
+          this dashboard can make these changes, so set a dashboard password
+          if that is not everyone in the house.</p>
+        <div id="addonindex"></div>
       </section>
     </div>
 
@@ -4549,6 +4603,775 @@ function listPicker(itemId, compact) {
   return wrap;
 }
 
+/* ---------- add-ons ---------- */
+
+/* Other add-ons on this Kodi that offer the shared add-on API
+   (ADDON-API-SPEC.md). Nothing here knows about any one add-on: the records,
+   the edit form and its pickers are all built from what the add-on's own
+   /info and /schema say, so a new add-on needs no change to this page. The
+   add-on checks every change itself, so this page never decides what is
+   valid; it shows what the add-on says and marks the field it names. */
+
+let ADDONS = [];
+const ADDON_SCHEMAS = {};
+
+/**
+ * <summary>
+ * Call an add-on through the dashboard's proxy.
+ * </summary>
+ * <param name="addonId">The add-on.</param>
+ * <param name="path">The path below the add-on, starting with a slash, query
+ * included.</param>
+ * <param name="method">GET when undefined.</param>
+ * <param name="body">A value to send as JSON, or undefined.</param>
+ * <param name="etag">The If-Match value a write must carry, or undefined.</param>
+ * <returns>{ data, etag }: the decoded reply (null when empty) and its ETag.</returns>
+ * <exception cref="Error">On an error status, carrying status, code and field
+ * from the reply so a caller can react to a stale copy or mark a field.</exception>
+ */
+async function addonCall(addonId, path, method, body, etag) {
+  const opts = { method: method || "GET", headers: {}, cache: "no-store" };
+  if (body !== undefined) {
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  if (etag) opts.headers["If-Match"] = etag;
+  const response = await fetch("/api/addons/" + encodeURIComponent(addonId)
+                               + path, opts);
+  const text = await response.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch (err) { data = null; }
+  }
+  if (!response.ok) {
+    /* The add-ons and the proxy answer {error: {code, message, field}};
+       the dashboard's own gates answer {error: "text"}. Both are read. */
+    const fault = data && data.error;
+    const err = new Error(fault && fault.message ? fault.message
+      : (typeof fault === "string" ? fault : "HTTP " + response.status));
+    err.status = response.status;
+    err.code = fault && fault.code;
+    err.field = fault && fault.field;
+    throw err;
+  }
+  return { data: data, etag: response.headers.get("ETag") };
+}
+
+/**
+ * <summary>
+ * Find the add-ons that offer an API and list them, each with its records and
+ * its backup and restore controls.
+ * </summary>
+ */
+async function loadAddons() {
+  const host = $("addonindex");
+  host.textContent = "";
+  host.append(el("p", { class: "empty" }, "Looking for add-ons\u2026"));
+  try {
+    const response = await fetch("/api/addons", { cache: "no-store" });
+    const reply = await response.json();
+    if (!response.ok) throw new Error(reply.error || response.status);
+    ADDONS = reply.addons || [];
+  } catch (err) {
+    host.textContent = "";
+    host.append(el("p", { class: "empty" },
+      "Could not look for add-ons: " + err.message));
+    return;
+  }
+  host.textContent = "";
+  if (!ADDONS.length) {
+    host.append(el("p", { class: "empty" },
+      "No add-on on this Kodi offers anything to manage here. Engage does "
+      + "once its \u201cAllow JellyStat to manage slots\u201d setting is on."));
+    return;
+  }
+  ADDONS.forEach((addon) => host.append(addonCard(addon)));
+}
+
+/**
+ * <summary>
+ * One add-on on the index: its name, what it offers, or why it cannot be
+ * managed from here.
+ * </summary>
+ * <param name="addon">An entry from /api/addons.</param>
+ * <returns>A div.</returns>
+ */
+function addonCard(addon) {
+  const card = el("div", { class: "addoncard" });
+  const head = el("div", { class: "hd" });
+  head.append(el("h3", {}, addon.name));
+  if (addon.version) head.append(el("span", { class: "ver" }, "v" + addon.version));
+  card.append(head);
+  if (addon.problem) {
+    card.append(el("p", { class: "hint warnline" }, addon.problem));
+    return card;
+  }
+  const info = addon.info || {};
+  const bar = el("div", { class: "playbar" });
+  (info.resources || []).forEach((resource) => {
+    const open = el("button", { type: "button", class: "primary" },
+                    resource.label || resource.name);
+    open.addEventListener("click", () => openResource(addon, resource));
+    bar.append(open);
+  });
+  if (info.backup) {
+    /* A plain link: the proxy passes the add-on's Content-Disposition
+       through, so the download is named by the add-on. */
+    const link = el("a", { class: "action", download: "",
+      href: "/api/addons/" + encodeURIComponent(addon.id) + "/backup" },
+      "Download backup");
+    bar.append(link);
+  }
+  const say = el("span", { class: "say" });
+  if (info.restore) bar.append(restoreControl(addon, say));
+  bar.append(say);
+  card.append(bar);
+  return card;
+}
+
+/**
+ * <summary>
+ * A restore button that reads a backup file, asks before replacing anything,
+ * and sends it to the add-on.
+ * </summary>
+ * <param name="addon">The add-on.</param>
+ * <param name="say">Where the outcome is written.</param>
+ * <returns>A label holding a hidden file input.</returns>
+ * <remarks>
+ * The ETag a restore must carry comes from a fresh GET /backup, so a restore
+ * chosen while somebody else changed things is refused rather than applied
+ * over the top of them.
+ * </remarks>
+ */
+function restoreControl(addon, say) {
+  const label = el("label", { class: "action restorebtn" }, "Restore from a backup\u2026");
+  const input = el("input", { type: "file", accept: ".json,application/json" });
+  label.append(input);
+  input.addEventListener("change", async () => {
+    const file = input.files[0];
+    input.value = "";
+    if (!file) return;
+    say.className = "say";
+    let doc;
+    try {
+      doc = JSON.parse(await file.text());
+    } catch (err) {
+      say.className = "say bad";
+      say.textContent = "That file is not a backup: it is not JSON.";
+      return;
+    }
+    if (!window.confirm("Replace everything in " + addon.name + " with \u201c"
+        + file.name + "\u201d? What is there now is overwritten.")) return;
+    say.textContent = "Restoring\u2026";
+    try {
+      const current = await addonCall(addon.id, "/backup");
+      const done = await addonCall(addon.id, "/restore", "POST", doc, current.etag);
+      say.textContent = "Restored" + (done.data && done.data.restored !== undefined
+        ? " " + plural(done.data.restored, "record") : "") + ".";
+    } catch (err) {
+      say.className = "say bad";
+      say.textContent = err.message;
+    }
+  });
+  return label;
+}
+
+/**
+ * <summary>
+ * An add-on's schema, fetched once and kept.
+ * </summary>
+ * <param name="addonId">The add-on.</param>
+ * <returns>The schema's resources map.</returns>
+ */
+async function addonSchema(addonId) {
+  if (!ADDON_SCHEMAS[addonId]) {
+    ADDON_SCHEMAS[addonId] = (await addonCall(addonId, "/schema")).data.resources || {};
+  }
+  return ADDON_SCHEMAS[addonId];
+}
+
+/**
+ * <summary>
+ * Replace itemShell's back link with one that goes somewhere else.
+ * </summary>
+ * <param name="host">The item page.</param>
+ * <param name="text">The link text.</param>
+ * <param name="go">What clicking it does.</param>
+ */
+function addonBackLink(host, text, go) {
+  /* Replaced rather than given a second listener, as openList does: the
+     shell's own listener would also fire and flick through the overview. */
+  const back = el("button", { class: "backlink", type: "button" }, "\u2190 " + text);
+  back.addEventListener("click", go);
+  host.replaceChild(back, host.firstChild);
+}
+
+/**
+ * <summary>
+ * One resource of an add-on as its own page: every record, an add button,
+ * and a delete control on each.
+ * </summary>
+ * <param name="addon">The add-on.</param>
+ * <param name="resource">The resource entry from its /info.</param>
+ * <param name="note">A line to show above the list, such as what was just
+ * saved, or undefined.</param>
+ */
+async function openResource(addon, resource, note) {
+  const host = itemShell();
+  addonBackLink(host, "Back to add-ons", () => { showView("addons"); loadAddons(); });
+  const head = el("div", { class: "itemhead" });
+  head.append(el("h2", {}, resource.label || resource.name));
+  head.append(el("span", { class: "tag" }, addon.name));
+  host.append(head);
+  const say = el("p", { class: "hint" }, note || "");
+  host.append(say);
+  const loading = el("p", { class: "empty" }, "Loading\u2026");
+  host.append(loading);
+
+  let schema;
+  let listing;
+  try {
+    schema = (await addonSchema(addon.id))[resource.name];
+    if (!schema) throw new Error(addon.name + " did not describe " + resource.name + ".");
+    listing = await addonCall(addon.id, "/" + resource.name);
+  } catch (err) {
+    loading.textContent = "Could not read them: " + err.message;
+    return;
+  }
+  loading.remove();
+  const state = { addon: addon, resource: resource, schema: schema, etag: listing.etag };
+
+  const bar = el("div", { class: "playbar" });
+  const add = el("button", { type: "button", class: "primary" },
+                 "Add " + (resource.label_one || "one").toLowerCase());
+  add.addEventListener("click", () => openRecord(state, null));
+  bar.append(add);
+  host.append(bar);
+
+  const panel = el("section", { class: "panel" });
+  const items = (listing.data && listing.data.items) || [];
+  if (!items.length) {
+    panel.append(el("p", { class: "empty" }, "None yet."));
+  }
+  const titleKey = resource.title_field;
+  const extras = schema.fields.filter((f) => f.type === "readonly" && f.key !== titleKey);
+  items.forEach((record) => {
+    const row = el("div", { class: "entryrow" });
+    const title = el("div", { class: "t" });
+    const name = el("button", { class: "nm", type: "button" },
+                    String(record[titleKey] !== undefined ? record[titleKey] : record.id));
+    name.addEventListener("click", () => openRecord(state, record));
+    title.append(name);
+    const sub = extras.map((f) => record[f.key]).filter((v) => v !== undefined && v !== "");
+    if (sub.length) title.append(el("div", { class: "sub" }, sub.join(" \u00b7 ")));
+    row.append(title);
+    /* "enabled" is the one field name the page reads by convention (spec
+       7.2): a record switched off says so in the list. */
+    if (record.enabled === false) row.append(el("span", { class: "tag" }, "Off"));
+    const kill = el("button", { class: "drop", type: "button",
+                                title: "Delete" }, "\u00d7");
+    kill.addEventListener("click", async () => {
+      if (!window.confirm("Delete \u201c" + name.textContent + "\u201d from "
+          + addon.name + "? This cannot be undone.")) return;
+      kill.disabled = true;
+      try {
+        await addonCall(addon.id, "/" + resource.name + "/" + record.id,
+                        "DELETE", undefined, state.etag);
+        openResource(addon, resource, "Deleted \u201c" + name.textContent + "\u201d.");
+      } catch (err) {
+        kill.disabled = false;
+        say.className = "hint warnline";
+        say.textContent = err.status === 412
+          ? err.message + " The list below has been reloaded."
+          : "Could not delete it: " + err.message;
+        if (err.status === 412) openResource(addon, resource, say.textContent);
+      }
+    });
+    row.append(kill);
+    panel.append(row);
+  });
+  host.append(panel);
+}
+
+/**
+ * <summary>
+ * Whether a field is shown for the current values, by its show_when rule.
+ * </summary>
+ * <param name="field">A schema field.</param>
+ * <param name="values">The form's current values.</param>
+ * <returns>True when every entry of the rule matches.</returns>
+ */
+function addonFieldShown(field, values) {
+  const rule = field.show_when || {};
+  return Object.keys(rule).every((key) =>
+    rule[key].some((allowed) => sameValue(allowed, values[key])));
+}
+
+/**
+ * <summary>
+ * Equality for JSON values, so an option that is an object matches the stored
+ * copy of it.
+ * </summary>
+ * <param name="a">A value.</param>
+ * <param name="b">Another.</param>
+ * <returns>True when they serialise the same.</returns>
+ */
+function sameValue(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * <summary>
+ * A short label for a picked value when the options that named it are not to
+ * hand, as for a record that was saved earlier.
+ * </summary>
+ * <param name="value">The stored value.</param>
+ * <returns>Text.</returns>
+ * <remarks>
+ * Reads the fields library items usually carry: a show with season and
+ * episode, or a title with a year. Anything else is shown as its JSON, which
+ * is ugly but never wrong.
+ * </remarks>
+ */
+function pickLabel(value) {
+  if (value === null || typeof value !== "object") return String(value);
+  const pad = (n) => String(n).padStart(2, "0");
+  if (value.show && value.season !== undefined && value.episode !== undefined) {
+    return value.show + " S" + pad(value.season) + "E" + pad(value.episode)
+      + (value.title ? ", " + value.title : "");
+  }
+  if (value.title) return value.title + (value.year ? " (" + value.year + ")" : "");
+  if (value.label) return String(value.label);
+  return JSON.stringify(value);
+}
+
+/**
+ * <summary>
+ * Ask an add-on for a picker's choices.
+ * </summary>
+ * <param name="state">The resource page state.</param>
+ * <param name="field">The schema field with options_from.</param>
+ * <param name="values">The form's values, for options_params.</param>
+ * <param name="q">Search text, or "".</param>
+ * <returns>{ items, more }.</returns>
+ */
+async function addonOptions(state, field, values, q) {
+  const params = [];
+  if (q) params.push("q=" + encodeURIComponent(q));
+  const map = field.options_params || {};
+  Object.keys(map).forEach((param) => {
+    const value = values[map[param]];
+    if (value !== undefined && value !== null) {
+      params.push(encodeURIComponent(param) + "=" + encodeURIComponent(String(value)));
+    }
+  });
+  const reply = await addonCall(state.addon.id, "/options/"
+    + encodeURIComponent(field.options_from) + (params.length ? "?" + params.join("&") : ""));
+  return { items: (reply.data && reply.data.items) || [], more: !!(reply.data && reply.data.more) };
+}
+
+/**
+ * <summary>
+ * Build the control for one field and wire it to the form's values.
+ * </summary>
+ * <param name="state">The resource page state.</param>
+ * <param name="field">The schema field.</param>
+ * <param name="values">The form's values, changed as the user edits.</param>
+ * <param name="changed">Called after any change, with the field's key.</param>
+ * <returns>{ node, reload }: the control, and a function that refetches its
+ * options (or undefined when it has none to fetch).</returns>
+ */
+function addonControl(state, field, values, changed) {
+  const key = field.key;
+  const set = (value) => { values[key] = value; changed(key); };
+  const value = values[key];
+
+  if (field.type === "readonly") {
+    return { node: el("div", { class: "ro" }, value === undefined ? "" : String(value)) };
+  }
+  if (field.type === "string") {
+    const input = el("input", { type: "text" });
+    if (field.max) input.setAttribute("maxlength", String(field.max));
+    input.value = value === undefined || value === null ? "" : String(value);
+    input.addEventListener("input", () => set(input.value));
+    return { node: input };
+  }
+  if (field.type === "integer") {
+    const input = el("input", { type: "number", step: "1" });
+    if (field.min !== undefined) input.setAttribute("min", String(field.min));
+    if (field.max !== undefined) input.setAttribute("max", String(field.max));
+    input.value = value === undefined || value === null ? "" : String(value);
+    /* Sent as typed; the add-on says what is wrong with an empty or
+       fractional number, in its own words. */
+    input.addEventListener("input", () =>
+      set(input.value === "" ? null : Number(input.value)));
+    return { node: input };
+  }
+  if (field.type === "boolean") {
+    const label = el("label", { class: "check" });
+    const box = el("input", { type: "checkbox", "aria-label": field.label });
+    box.checked = value === true;
+    box.addEventListener("change", () => set(box.checked));
+    label.append(box, document.createTextNode(" " + field.label));
+    return { node: label };
+  }
+  if (field.type === "time" || field.type === "date") {
+    const input = el("input", { type: field.type });
+    input.value = value || "";
+    input.addEventListener("change", () => set(input.value));
+    return { node: input };
+  }
+  if (field.type === "choice") {
+    const select = el("select");
+    let options = [];
+    /**
+     * <summary>
+     * Fill the menu, keeping a current value the options no longer offer.
+     * </summary>
+     * <param name="list">The options.</param>
+     * <param name="more">The source has more than it sent.</param>
+     */
+    const fill = (list, more) => {
+      options = list.slice();
+      const current = values[key];
+      const known = options.some((o) => sameValue(o.value, current));
+      if (!known && current !== undefined && current !== null && current !== "") {
+        /* A favourite renamed in Kodi, say. Kept and shown rather than
+           silently swapped for the first option. */
+        options.unshift({ value: current, label: pickLabel(current) + " (current)" });
+      }
+      select.textContent = "";
+      if (!options.some((o) => sameValue(o.value, values[key]))) {
+        /* Selected as well as disabled, so the menu shows it rather than
+           quietly displaying the first real option nobody chose. */
+        select.append(el("option", { value: "", disabled: "", selected: "" },
+                         "Choose\u2026"));
+      }
+      options.forEach((o, i) => {
+        const opt = el("option", { value: String(i) }, o.label);
+        if (sameValue(o.value, values[key])) opt.selected = true;
+        select.append(opt);
+      });
+      if (more) select.append(el("option", { value: "", disabled: "" },
+                                 "More available than are listed"));
+      if (!options.length && !more) {
+        select.append(el("option", { value: "", disabled: "" }, "Nothing to choose from"));
+      }
+    };
+    select.addEventListener("change", () => {
+      const chosen = options[Number(select.value)];
+      if (chosen) set(chosen.value);
+    });
+    if (!field.options_from) {
+      fill(field.options || [], false);
+      return { node: select };
+    }
+    const reload = async () => {
+      select.textContent = "";
+      select.append(el("option", { value: "", disabled: "" }, "Loading\u2026"));
+      try {
+        const got = await addonOptions(state, field, values, "");
+        fill(got.items, got.more);
+      } catch (err) {
+        select.textContent = "";
+        select.append(el("option", { value: "", disabled: "" },
+                         "Could not load: " + err.message));
+      }
+    };
+    reload();
+    return { node: select, reload: reload };
+  }
+  if (field.type === "multichoice") {
+    const wrap = el("div", { class: "checks" });
+    const picked = Array.isArray(value) ? value : [];
+    const boxes = [];
+    (field.options || []).forEach((o) => {
+      const label = el("label", { class: "check" });
+      const box = el("input", { type: "checkbox" });
+      box.checked = picked.some((p) => sameValue(p, o.value));
+      box.setAttribute("aria-label", field.label + ": " + o.label);
+      box.addEventListener("change", () => {
+        /* In the options' order, not the order they were ticked. */
+        set(field.options.filter((opt, i) => boxes[i].checked).map((opt) => opt.value));
+      });
+      boxes.push(box);
+      label.append(box, document.createTextNode(" " + o.label));
+      wrap.append(label);
+    });
+    return { node: wrap };
+  }
+  if (field.type === "picks") {
+    return { node: addonPicks(state, field, values, set) };
+  }
+  /* A type this page does not know (a newer add-on): shown, never sent, so
+     the add-on keeps the stored value (spec 7.2). */
+  return { node: el("pre", { class: "ro" }, JSON.stringify(value, null, 1)) };
+}
+
+/**
+ * <summary>
+ * An ordered list of picks with move and remove controls, and a library
+ * search to add more.
+ * </summary>
+ * <param name="state">The resource page state.</param>
+ * <param name="field">The picks field.</param>
+ * <param name="values">The form's values.</param>
+ * <param name="set">Stores a new list and reports the change.</param>
+ * <returns>A div.</returns>
+ */
+function addonPicks(state, field, values, set) {
+  const wrap = el("div", { class: "picks" });
+  const list = el("div", { class: "picklist" });
+  const labels = new Map();
+  const current = () => (Array.isArray(values[field.key]) ? values[field.key].slice() : []);
+  const labelOf = (v) => labels.get(JSON.stringify(v)) || pickLabel(v);
+
+  /**
+   * <summary>
+   * Draw the picks in order.
+   * </summary>
+   */
+  const draw = () => {
+    list.textContent = "";
+    const picks = current();
+    if (!picks.length) list.append(el("p", { class: "empty" }, "Nothing picked yet."));
+    picks.forEach((v, i) => {
+      const row = el("div", { class: "entryrow" });
+      row.append(el("span", { class: "rk" }, String(i + 1)));
+      row.append(el("div", { class: "t" }, labelOf(v)));
+      const move = (to) => {
+        const next = current();
+        next.splice(to, 0, next.splice(i, 1)[0]);
+        set(next);
+        draw();
+      };
+      const up = el("button", { class: "drop", type: "button", title: "Move up" }, "\u2191");
+      up.disabled = i === 0;
+      up.addEventListener("click", () => move(i - 1));
+      const down = el("button", { class: "drop", type: "button", title: "Move down" }, "\u2193");
+      down.disabled = i === picks.length - 1;
+      down.addEventListener("click", () => move(i + 1));
+      const kill = el("button", { class: "drop", type: "button", title: "Remove" }, "\u00d7");
+      kill.addEventListener("click", () => {
+        const next = current();
+        next.splice(i, 1);
+        set(next);
+        draw();
+      });
+      row.append(up, down, kill);
+      list.append(row);
+    });
+  };
+
+  const row = el("div", { class: "filerow" });
+  const box = el("input", { type: "text", placeholder: "Search to add\u2026",
+                            "aria-label": "Search to add" });
+  const go = el("button", { class: "action", type: "button" }, "Search");
+  row.append(box, go);
+  const results = el("div", { class: "pickresults" });
+
+  /**
+   * <summary>
+   * Search the add-on's option source and list what can be added.
+   * </summary>
+   */
+  const search = async () => {
+    results.textContent = "";
+    results.append(el("p", { class: "empty" }, "Searching\u2026"));
+    let got;
+    try {
+      got = await addonOptions(state, field, values, box.value.trim());
+    } catch (err) {
+      results.textContent = "";
+      results.append(el("p", { class: "empty" }, "Could not search: " + err.message));
+      return;
+    }
+    results.textContent = "";
+    if (!got.items.length) {
+      results.append(el("p", { class: "empty" }, got.more
+        ? "Type a name to search for." : "Nothing found."));
+      return;
+    }
+    if (got.items.length > 1) {
+      const all = el("button", { class: "action", type: "button" },
+                     "Add all " + got.items.length);
+      all.addEventListener("click", () => {
+        const next = current();
+        got.items.forEach((o) => {
+          labels.set(JSON.stringify(o.value), o.label);
+          if (!next.some((v) => sameValue(v, o.value))) next.push(o.value);
+        });
+        set(next);
+        draw();
+      });
+      results.append(all);
+    }
+    got.items.forEach((o) => {
+      const line = el("div", { class: "entryrow" });
+      line.append(el("div", { class: "t" }, o.label));
+      const add = el("button", { class: "drop", type: "button", title: "Add" }, "+");
+      add.addEventListener("click", () => {
+        const next = current();
+        if (next.some((v) => sameValue(v, o.value))) return;
+        labels.set(JSON.stringify(o.value), o.label);
+        next.push(o.value);
+        set(next);
+        draw();
+      });
+      line.append(add);
+      results.append(line);
+    });
+    if (got.more) results.append(el("p", { class: "empty" },
+      "There are more; type more of the name to narrow it."));
+  };
+  go.addEventListener("click", search);
+  box.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); search(); }
+  });
+
+  draw();
+  wrap.append(list, row, results);
+  return wrap;
+}
+
+/**
+ * <summary>
+ * One record as an edit form built from the schema, or a new one from the
+ * add-on's defaults.
+ * </summary>
+ * <param name="state">The resource page state.</param>
+ * <param name="record">The record from the list, or null to add one.</param>
+ * <remarks>
+ * The record is read again first, so the form and the ETag it saves against
+ * are as fresh as possible. Only the fields shown are sent: a hidden field
+ * keeps its stored value, which is what lets a slot switched from weekly to
+ * monthly and back get its old days again.
+ * </remarks>
+ */
+async function openRecord(state, record) {
+  const { addon, resource, schema } = state;
+  const host = itemShell();
+  addonBackLink(host, "Back to " + (resource.label || resource.name).toLowerCase(),
+                () => openResource(addon, resource));
+  const isNew = record === null;
+  const head = el("div", { class: "itemhead" });
+  head.append(el("h2", {}, isNew ? "New " + (resource.label_one || "record").toLowerCase()
+    : String(record[resource.title_field] || record.id)));
+  head.append(el("span", { class: "tag" }, addon.name));
+  host.append(head);
+  const loading = el("p", { class: "empty" }, "Loading\u2026");
+  host.append(loading);
+
+  let values;
+  let etag = state.etag;
+  try {
+    if (isNew) {
+      values = (await addonCall(addon.id, "/" + resource.name + "/new")).data;
+    } else {
+      const fresh = await addonCall(addon.id, "/" + resource.name + "/" + record.id);
+      values = fresh.data;
+      etag = fresh.etag || etag;
+    }
+  } catch (err) {
+    loading.textContent = "Could not open it: " + err.message;
+    return;
+  }
+  loading.remove();
+  /* Defaults from the schema fill fields the record does not carry yet,
+     such as the list fields of a slot about to become a list slot. */
+  schema.fields.forEach((f) => {
+    if (values[f.key] === undefined && f.default !== undefined) {
+      values[f.key] = JSON.parse(JSON.stringify(f.default));
+    }
+  });
+
+  const panel = el("section", { class: "panel" });
+  const rows = [];
+  const reloads = [];
+  /**
+   * <summary>
+   * Show and hide fields for the current values, and refetch any options that
+   * depend on the field just changed.
+   * </summary>
+   * <param name="changedKey">The field that changed, or undefined.</param>
+   */
+  const refresh = (changedKey) => {
+    rows.forEach(({ field, row }) => {
+      row.style.display = addonFieldShown(field, values) ? "" : "none";
+    });
+    if (changedKey) {
+      reloads.forEach(({ field, reload }) => {
+        const params = Object.values(field.options_params || {});
+        if (params.includes(changedKey)) reload();
+      });
+    }
+  };
+  schema.fields.forEach((field) => {
+    if (isNew && field.type === "readonly") return;
+    const row = el("div", { class: "fieldrow" });
+    if (field.type !== "boolean") {
+      row.append(el("h3", {}, field.label + (field.required ? " *" : "")));
+    }
+    if (field.help) row.append(el("p", { class: "hint" }, field.help));
+    const control = addonControl(state, field, values, refresh);
+    /* The heading above is not tied to the control, so the control carries
+       the field's name itself for anyone using a screen reader. */
+    if (["INPUT", "SELECT"].includes(control.node.tagName)) {
+      control.node.setAttribute("aria-label", field.label);
+    }
+    row.append(control.node);
+    row.append(el("p", { class: "err" }));
+    rows.push({ field: field, row: row });
+    if (control.reload) reloads.push({ field: field, reload: control.reload });
+    panel.append(row);
+  });
+  host.append(panel);
+
+  const bar = el("div", { class: "playbar" });
+  const save = el("button", { type: "button", class: "primary" }, "Save");
+  const cancel = el("button", { type: "button" }, "Cancel");
+  const say = el("span", { class: "say" });
+  cancel.addEventListener("click", () => openResource(addon, resource));
+  save.addEventListener("click", async () => {
+    rows.forEach(({ row }) => {
+      row.classList.remove("bad");
+      row.querySelector(".err").textContent = "";
+    });
+    const body = {};
+    rows.forEach(({ field }) => {
+      if (field.type === "readonly" || !addonFieldShown(field, values)) return;
+      if (!["string", "integer", "boolean", "choice", "multichoice", "time",
+            "date", "picks"].includes(field.type)) return;
+      if (values[field.key] !== undefined) body[field.key] = values[field.key];
+    });
+    save.disabled = true;
+    say.className = "say";
+    say.textContent = "Saving\u2026";
+    try {
+      const path = "/" + resource.name + (isNew ? "" : "/" + record.id);
+      const done = await addonCall(addon.id, path, isNew ? "POST" : "PUT", body, etag);
+      const name = done.data && done.data[resource.title_field];
+      openResource(addon, resource, "Saved" + (name ? " \u201c" + name + "\u201d" : "") + ".");
+    } catch (err) {
+      save.disabled = false;
+      say.className = "say bad";
+      say.textContent = err.message;
+      if (err.status === 412) {
+        say.textContent = err.message + " Your changes here are not saved.";
+      }
+      const at = err.field && rows.find(({ field }) => field.key === err.field);
+      if (at) {
+        at.row.classList.add("bad");
+        at.row.querySelector(".err").textContent = err.message;
+        at.row.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    }
+  });
+  bar.append(save, cancel, say);
+  host.append(bar);
+  refresh();
+}
+
 /* ---------- Trakt import ---------- */
 
 let TRAKT = null;
@@ -5516,7 +6339,7 @@ $("baknow").addEventListener("click", async (evt) => {
 
 const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
                "movies-library", "tv-library", "recommended", "rate",
-               "lists"];
+               "lists", "addons"];
 
 /**
  * <summary>
@@ -5555,6 +6378,7 @@ document.querySelectorAll("nav.side button").forEach((btn) => {
     }
     if (btn.dataset.view === "rate") loadRateQueue(RATE_MEDIA);
     if (btn.dataset.view === "lists") loadLists();
+    if (btn.dataset.view === "addons") loadAddons();
   });
 });
 
