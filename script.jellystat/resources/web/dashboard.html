@@ -793,6 +793,9 @@ label.restorebtn input { display: none; }
 .empty { color: var(--ink-dim); font-size: 13px; padding: 6px 0; }
 #loading { color: var(--ink-dim); padding: 60px 0; text-align: center; }
 #dash { display: none; }
+/* The stats never loaded: the Overview has nothing true to show, so its
+   panels stay hidden behind the error rather than reading as zeros. */
+#view-overview.nostats { display: none !important; }
 </style>
 </head>
 <body>
@@ -2133,6 +2136,10 @@ function renderGenreDrift(host) {
 
 /* ---------- load ---------- */
 
+/* True while the last stats load failed. The banner then belongs to the
+   Overview only, see showView. */
+let STATS_FAILED = false;
+
 /**
  * <summary>
  * Show the error banner and hide the loading notice.
@@ -2161,6 +2168,8 @@ async function load(force) {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || ("HTTP " + response.status));
     DATA = payload;
+    STATS_FAILED = false;
+    $("view-overview").classList.remove("nostats");
     $("error").style.display = "none";
     $("loading").style.display = "none";
     $("dash").style.display = "block";
@@ -2179,7 +2188,14 @@ async function load(force) {
     renderRewatches();
     habitHints();
   } catch (err) {
+    STATS_FAILED = true;
     showError("Could not load the stats.\n" + err.message);
+    /* Every other page fetches its own data, and some, such as Add-ons and
+       Settings, need no Jellyfin at all. The pages used to stay hidden with
+       the stats, which left a box with no Jellyfin login unable to reach
+       them. Only the Overview, with nothing to draw, stays hidden. */
+    if (!DATA) $("view-overview").classList.add("nostats");
+    $("dash").style.display = "block";
   } finally {
     refresh.disabled = false;
     refresh.textContent = "Refresh";
@@ -6375,11 +6391,16 @@ const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
  * Show one view, mark its nav button current and scroll to the top.
  * </summary>
  * <param name="name">A VIEWS entry.</param>
+ * <remarks>
+ * A failed stats load keeps its banner on the Overview only: on Add-ons or
+ * Settings it would read as if that page had failed.
+ * </remarks>
  */
 function showView(name) {
   VIEWS.forEach((view) => {
     $("view-" + view).style.display = view === name ? "block" : "none";
   });
+  if (STATS_FAILED) $("error").style.display = name === "overview" ? "block" : "none";
   document.querySelectorAll("nav.side button").forEach((btn) => {
     btn.setAttribute("aria-current",
       btn.dataset.view === name ? "true" : "false");
