@@ -148,10 +148,20 @@ class PlayLogger(xbmc.Player):
         </summary>
         <remarks>
         Records the start position so a resumed film only counts what this sitting covers, and a monotonic clock reading so a clock correction during playback cannot make the elapsed time negative.
+
+        A sitting still open when this fires is finished first. Kodi does not
+        promise a stop callback before the next start when one item replaces
+        another (the dashboard's own Play button does that through
+        Player.Open), and overwriting the open session would lose it unlogged
+        and leave its sampler running.
         </remarks>
         """
         if not self._enabled() or not self.isPlayingVideo():
             return
+        with self._lock:
+            open_session = self._session is not None
+        if open_session:
+            self._safe_finish()
         tag = self.getVideoInfoTag()
         media = (tag.getMediaType() or "").lower()
         # Music videos, live TV and loose files carry no watch history worth

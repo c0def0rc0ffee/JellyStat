@@ -36,7 +36,7 @@ Run it from **Add-ons → Program add-ons → JellyStat**:
   `Title (Year)  [Genres]  ★ 7.8 | Critics: 85% | ♥`, most recently
   watched first.
 - **Episodes, all time / last 30 days**, every played episode as
-  `Show S01E02 - Title  [Show genres]  ★ 8.1` (genres come from the show,
+  `Show S01E02: Title  [Show genres]  ★ 8.1` (genres come from the show,
   as Jellyfin doesn't store genres per episode).
 
 "Last 30 days" is based on each item's last-played date reported by Jellyfin.

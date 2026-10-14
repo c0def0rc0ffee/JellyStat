@@ -7,7 +7,7 @@ File import for the play log: parse, stage, compare, then commit.
 Nothing an uploaded file contains touches the database until the user has
 seen what is in it. The flow the web UI drives:
 
-1. `stage(filename, raw)` - the file is parsed into normalised sessions and
+1. `stage(filename, raw)`: the file is parsed into normalised sessions and
    held in memory under a token. The result describes what was found: the
    format, how many sessions, the date range, and the part that matters most,
    how it compares with what is already logged: exact duplicates, days where
@@ -48,6 +48,7 @@ import xbmc
 import backup
 import history
 import playlog
+import timeparse
 
 
 def _min_seconds():
@@ -137,7 +138,7 @@ def _parse_stamp(value):
     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M",
                 "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
-            return datetime.strptime(value[:19 if "S" in fmt else 16], fmt)
+            return timeparse.strptime(value[:19 if "S" in fmt else 16], fmt)
         except ValueError:
             continue
     return None

@@ -14,7 +14,6 @@ otherwise the server URL and API key from this addon's settings are used.
 import json
 import ssl
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,6 +22,8 @@ from datetime import datetime, timedelta
 import xbmcaddon
 import xbmcgui
 import xbmcvfs
+
+import timeparse
 
 ADDON = xbmcaddon.Addon()
 ADDON_NAME = "JellyStat"
@@ -133,6 +134,8 @@ def get_credentials():
     creds = credentials_from_settings()
     if creds:
         return creds
+    # A newline, not [CR]: this text also reaches the dashboard as JSON,
+    # where [CR] would show literally. dialog_text() converts it for Kodi.
     raise JellyStatError(
         "No Jellyfin login found.\n"
         "Sign in with the Jellyfin for Kodi addon, or set the server URL "
@@ -184,6 +187,27 @@ def api_get(base, token, path, params=None):
                              % (base, err))
 
 
+def items_of(result, path):
+    """
+    <summary>
+    The Items list of a Jellyfin query reply, refusing a reply of the wrong shape.
+    </summary>
+    <param name="result">Whatever api_get decoded.</param>
+    <param name="path">The path asked for, named in the error.</param>
+    <returns>The list under Items, empty when the key is missing.</returns>
+    <exception cref="JellyStatError">When the reply is not a JSON object, which
+    is what a reverse proxy or a wrong URL answers with; without this the
+    caller fails on .get and the page shows an attribute error instead of the
+    reason.</exception>
+    """
+    if not isinstance(result, dict):
+        raise JellyStatError(
+            "Jellyfin answered %s with %s rather than an object; check the "
+            "server URL." % (path, type(result).__name__))
+    items = result.get("Items")
+    return items if isinstance(items, list) else []
+
+
 def get_watched(creds, item_type):
     """
     <summary>
@@ -203,7 +227,7 @@ def get_watched(creds, item_type):
                          "SortBy": "DatePlayed",
                          "SortOrder": "Descending",
                      })
-    return result.get("Items", [])
+    return items_of(result, "/Users/%s/Items" % creds["user_id"])
 
 
 def get_series(creds):
@@ -224,7 +248,7 @@ def get_series(creds):
                          "Fields": "Genres,CommunityRating,CriticRating,"
                                    "ProductionYear,ProviderIds",
                      })
-    return result.get("Items", [])
+    return items_of(result, "/Users/%s/Items" % creds["user_id"])
 
 
 def get_series_genres(creds, series=None):
@@ -248,11 +272,9 @@ def parse_played_date(value):
         return None
     value = value[:19]
     try:
-        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S")
-    except TypeError:
-        # Kodi's embedded Python can lose datetime.strptime after first use;
-        # fall back to time.strptime (well-known interpreter quirk).
-        return datetime(*(time.strptime(value, "%Y-%m-%dT%H:%M:%S")[0:6]))
+        # timeparse carries the fallback Kodi's embedded Python needs; see
+        # that module for why datetime.strptime alone is not safe here.
+        return timeparse.strptime(value, "%Y-%m-%dT%H:%M:%S")
     except ValueError:
         return None
 
@@ -279,7 +301,7 @@ def filter_recent(items, days=30):
 
 # One label in, one *or more* genres out. Television and film are tagged
 # from different vocabularies: TMDb gives films "Action" and "Adventure"
-# separately but television a single "Action & Adventure" - and left alone
+# separately but television a single "Action & Adventure", and left alone
 # that splits a genre's evidence in three: a show tagged the combined way
 # counts toward neither of the two the films use. Everything downstream
 # (stats, the taste profile, the genre filters) reads through
@@ -441,7 +463,7 @@ def episode_label(episode, series_genres, show_rating=True):
     """
     code = "S%02dE%02d" % (episode.get("ParentIndexNumber") or 0,
                            episode.get("IndexNumber") or 0)
-    label = "%s %s - %s  [%s]" % (episode.get("SeriesName", "?"), code,
+    label = "%s %s: %s  [%s]" % (episode.get("SeriesName", "?"), code,
                                   episode.get("Name", "?"),
                                   format_genres(
                                       effective_genres(episode,
@@ -454,6 +476,23 @@ def episode_label(episode, series_genres, show_rating=True):
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
+
+def dialog_text(message):
+    """
+    <summary>
+    An error's text as Kodi's ok dialog can draw it.
+    </summary>
+    <param name="message">An exception or a string, possibly with newlines.</param>
+    <returns>The text with every newline as [CR].</returns>
+    <remarks>
+    The dialog draws a newline as nothing, running the lines together; [CR]
+    is its line break. The exceptions keep real newlines because the same
+    text goes to the dashboard as JSON, so the conversion is made here, at
+    the one kind of place that needs it.
+    </remarks>
+    """
+    return str(message).replace("\n", "[CR]")
+
 
 def show_list(heading, labels):
     """
@@ -470,7 +509,7 @@ def show_list(heading, labels):
         xbmcgui.Dialog().ok(ADDON_NAME, "Nothing watched yet in this category.")
         return
     # select() is only used for browsing; picking an entry just closes it.
-    xbmcgui.Dialog().select("%s - %s (%d)" % (ADDON_NAME, heading, len(labels)),
+    xbmcgui.Dialog().select("%s: %s (%d)" % (ADDON_NAME, heading, len(labels)),
                             labels)
 
 
@@ -602,15 +641,16 @@ def send_stats_now():
         payload = stats_sender.send()
     except (stats_sender.SendError, JellyStatError) as err:
         progress.close()
-        xbmcgui.Dialog().ok(ADDON_NAME, str(err))
+        xbmcgui.Dialog().ok(ADDON_NAME, dialog_text(err))
         return
     finally:
         progress.close()
     movies = payload["movies"]
     tv = payload["tv"]
+    # [CR], not a newline: Kodi's ok dialog draws a newline as nothing.
     xbmcgui.Dialog().ok(ADDON_NAME,
-                        "Sent: site confirmed ok.\n"
-                        "Movies: %d all time, %d last 30 days\n"
+                        "Sent: site confirmed ok.[CR]"
+                        "Movies: %d all time, %d last 30 days[CR]"
                         "Episodes: %d all time, %d last 30 days"
                         % (movies["all_time"]["total"],
                            movies["last_30_days"]["total"],
@@ -635,7 +675,7 @@ def show_dashboard_info():
     if ADDON.getSetting("web_enabled") != "true":
         xbmcgui.Dialog().ok(
             ADDON_NAME,
-            "The web dashboard is switched off.\n"
+            "The web dashboard is switched off.[CR]"
             "Turn it on in settings -> Web dashboard, then come back here "
             "for the address to open on your phone or laptop.")
         return
@@ -693,7 +733,7 @@ def main():
         series_genres = get_series_genres(creds)
     except JellyStatError as err:
         progress.close()
-        xbmcgui.Dialog().ok(ADDON_NAME, str(err))
+        xbmcgui.Dialog().ok(ADDON_NAME, dialog_text(err))
         return
     finally:
         progress.close()

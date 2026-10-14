@@ -41,6 +41,7 @@ import importer
 import library
 import lists
 import playlog
+import timeparse
 import trakt
 
 STAGE_TTL_S = 1800
@@ -591,7 +592,7 @@ def _insert_history(connection, sessions, batch_id, skip_duplicates=True):
         if skip_duplicates and session.get("duplicate"):
             skipped += 1
             continue
-        start = datetime.strptime(session["started_at"], playlog.STAMP)
+        start = timeparse.strptime(session["started_at"], playlog.STAMP)
         end = start + timedelta(seconds=session["watched_seconds"])
         connection.execute(
             "INSERT INTO plays (started_at, ended_at, day, hour, weekday, "

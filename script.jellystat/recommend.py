@@ -13,11 +13,11 @@ fetched at most once an hour and kept in memory.
 Scoring is deliberately explainable, and rests on two different signals
 that must not be confused with each other:
 
-- **Exposure** - what you watch, weighted by plays. It says a sci-fi-heavy
+- **Exposure**: what you watch, weighted by plays. It says a sci-fi-heavy
   history should surface sci-fi. It cannot say whether you *enjoyed* any of
   it: a film watched once and hated counts exactly as much as one watched
   once and loved.
-- **Opinion** - what you thought, from your own ratings, as a deviation
+- **Opinion**: what you thought, from your own ratings, as a deviation
   from your personal average rather than an absolute. Someone whose scores
   run 6-9 and someone whose scores run 2-10 both have a meaningful middle,
   and only the distance from it carries information.
@@ -147,7 +147,7 @@ def _fetch(creds, item_type):
                               "Fields": "Genres,CommunityRating,"
                                         "ProductionYear",
                           })
-    return result.get("Items", [])
+    return core.items_of(result, "/Users/%s/Items" % creds["user_id"])
 
 
 def catalog():
@@ -343,7 +343,7 @@ def _entry(item, seen, score, match, view, covered):
         "genres": core.effective_genres(item),
         "seen": seen,
         "score": round(score, 4),
-        # Kept apart so the page can say *why* - "matches what you watch"
+        # Kept apart so the page can say *why*: "matches what you watch"
         # and "you rate this sort of thing well" are different claims and a
         # single blended number cannot make either of them.
         "match": round(match, 4),
@@ -378,7 +378,7 @@ def recommendations(media, include_seen, limit=RECOMMEND_LIMIT, offset=0,
     `genres` narrows the result to titles carrying **every** named genre,
     not merely one of them: picking science fiction and action asks for
     films that are both, which is what choosing two things means.
-    `exclude` drops any title carrying **any** named genre - "not this,
+    `exclude` drops any title carrying **any** named genre: "not this,
     whatever else it also is", which is what refusing a genre means.
 
     Filtering and ordering are separate decisions and are kept that way.
@@ -598,7 +598,7 @@ def search(term, limit=25):
     </summary>
     <remarks>
     The mirror is a record of what was watched, so on its own it cannot
-    answer "do I have this?" - only "have I seen this?". Those are different
+    answer "do I have this?", only "have I seen this?". Those are different
     questions and the search box is nearly always asking the first.
 
     Lives here rather than in library.py because this is where the catalogue

@@ -15,7 +15,7 @@ Two things make this different from the CSV importers:
 - **Identity.** Every Trakt record carries IMDb, TMDb and TVDb ids, and so
   does every item Jellyfin holds. Matching on those instead of on titles is
   the difference between eight episodes in ten finding their row and
-  practically all of them - "24" alone spells its episode titles four
+  practically all of them: "24" alone spells its episode titles four
   different ways across the two services.
 
 - **Duration.** Trakt records *that* something was played, never for how
@@ -33,13 +33,13 @@ import json
 import os
 import re
 import zipfile
-from datetime import datetime
 
 import xbmc
 
 import library
 import main as core
 import playlog
+import timeparse
 
 # Trakt's own words for how a play was recorded. A scrobble came from a
 # player reporting progress in real time; a "watch" is usually a backfill,
@@ -100,7 +100,7 @@ def _stamp(value):
     """
     raw = (value or "").strip()[:19]
     try:
-        utc = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S")
+        utc = timeparse.strptime(raw, "%Y-%m-%dT%H:%M:%S")
     except ValueError:
         return None
     return playlog.to_local(utc).strftime(playlog.STAMP)
@@ -157,7 +157,7 @@ def list_slug_from(path):
     <remarks>
     Deliberately light-handed. An earlier version also stripped trailing
     digits, on the theory that they were list ids, and turned "Halloween
-    2019" into "Halloween" - losing the year *and*, worse, breaking the
+    2019" into "Halloween", losing the year *and*, worse, breaking the
     match against the lists index that would have supplied the real name.
     A number at the end of a list name is far more often a year than an id.
     </remarks>
@@ -315,7 +315,7 @@ def _is_collection(entry):
     Checked by content where read_zip has already classified it, and by
     filename otherwise. The filename test exists because the browser's file
     picker cannot classify a collection any more precisely than "a set of
-    titles" - and without it the same export named its collection two
+    titles", and without it the same export named its collection two
     different things depending on whether you handed over the .zip or the
     files inside it.
     </remarks>

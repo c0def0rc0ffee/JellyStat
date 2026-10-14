@@ -32,6 +32,7 @@ import xbmc
 
 import library
 import playlog
+import timeparse
 
 # Where the day is cut into named parts, matching how people describe
 # viewing rather than any clock convention.
@@ -248,7 +249,7 @@ def screen_time(days=7, now=None):
 
     labels = _days(start, days)
     breakdown = [{"date": day,
-                  "weekday": datetime.strptime(day, "%Y-%m-%d").weekday(),
+                  "weekday": timeparse.strptime(day, "%Y-%m-%d").weekday(),
                   "minutes": round(current["per_day"].get(day, 0.0)),
                   "assumed_minutes": round(
                       current["per_day_assumed"].get(day, 0.0)),
@@ -263,7 +264,7 @@ def screen_time(days=7, now=None):
     elapsed = days
     if covered:
         try:
-            first = datetime.strptime(covered, "%Y-%m-%d").date()
+            first = timeparse.strptime(covered, "%Y-%m-%d").date()
         except ValueError:
             first = None
         if first and first > start:

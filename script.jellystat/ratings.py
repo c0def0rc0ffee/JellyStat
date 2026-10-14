@@ -346,7 +346,7 @@ def _why(err):
     </summary>
     """
     if getattr(err, "code", None) == 403:
-        return "403 - the key is not an administrator key"
+        return "403, the key is not an administrator key"
     return str(err)
 
 

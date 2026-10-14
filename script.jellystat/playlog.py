@@ -27,11 +27,13 @@ of one history and a single file is one thing to back up.
 """
 
 import sqlite3
+import threading
 from datetime import datetime, timedelta, timezone
 
 import xbmc
 
 import history
+import timeparse
 
 # How a timestamp is spelled in this table, everywhere, by every writer.
 # Readers compare these as strings: library._known_session does its
@@ -69,12 +71,19 @@ CREATE TABLE IF NOT EXISTS plays (
     batch_id        INTEGER
 );
 CREATE INDEX IF NOT EXISTS plays_day ON plays (day);
-CREATE INDEX IF NOT EXISTS plays_batch ON plays (batch_id);
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 """
+
+# Indexes on columns MIGRATIONS adds, run after it. Until 14/10/2026 the
+# batch_id index sat in SCHEMA, which runs first, so a file in the original
+# schema (no batch_id yet) failed on "no such column" before the migration
+# that adds the column could run, and could not be opened at all.
+INDEXES = [
+    "CREATE INDEX IF NOT EXISTS plays_batch ON plays (batch_id)",
+]
 
 # Columns added after the table first shipped. SQLite has no "ADD COLUMN IF
 # NOT EXISTS", so each is attempted and its duplicate-column error ignored,
@@ -145,7 +154,7 @@ def parse_stamp(value):
     raw = (value or "").strip()[:19]
     for fmt in (STAMP, "%Y-%m-%d %H:%M:%S"):
         try:
-            return datetime.strptime(raw, fmt)
+            return timeparse.strptime(raw, fmt)
         except ValueError:
             continue
     return None
@@ -227,13 +236,21 @@ def _data_repairs(connection):
     part-way leaves the log exactly as it was rather than half-converted:
     a half-converted log cannot be told apart from an unconverted one, and
     the next attempt would shift the repaired rows a second time.
+
+    The "already done" check is made inside that same transaction, with the
+    write lock held, not before it. Checked outside, two connections could
+    both read "not done" and both convert: the second would shift rows the
+    first had just converted by the offset again. Within one process the
+    lock in connect() stops that; the transaction is the guard against a
+    second process (the script add-on and the service share one file) and
+    is what makes the repair safe to run twice.
     </remarks>
     """
+    marks = ",".join("?" * len(_TRAKT_SOURCES))
     done = {row[0] for row in
             connection.execute("SELECT key FROM schema_meta")}
     if TRAKT_TIME_REPAIR in done:
         return
-    marks = ",".join("?" * len(_TRAKT_SOURCES))
     pending = connection.execute(
         "SELECT COUNT(*) FROM plays WHERE source IN (%s) AND hour >= 0"
         % marks, _TRAKT_SOURCES).fetchone()[0]
@@ -248,52 +265,83 @@ def _data_repairs(connection):
         except Exception as err:
             log("Could not snapshot before repairing timestamps: %s" % err,
                 xbmc.LOGWARNING)
+    repaired = 0
     with connection:
-        repaired = _repair_trakt_times(connection)
-        connection.execute(
-            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
-            (TRAKT_TIME_REPAIR, datetime.now().strftime(STAMP)))
+        # BEGIN IMMEDIATE takes the write lock now, so the check below sees
+        # what every other writer has committed and nobody else can slip a
+        # repair in between the check and the UPDATEs.
+        connection.execute("BEGIN IMMEDIATE")
+        held = connection.execute(
+            "SELECT 1 FROM schema_meta WHERE key = ?",
+            (TRAKT_TIME_REPAIR,)).fetchone()
+        if held is None:
+            repaired = _repair_trakt_times(connection)
+            connection.execute(
+                "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+                (TRAKT_TIME_REPAIR, datetime.now().strftime(STAMP)))
     if repaired:
         log("Repaired %d Trakt play row(s): UTC timestamps moved to local "
             "time and stamps rewritten in the standard form." % repaired)
 
 
-_schema_done = False
+# The database file the schema was last applied to (history.db_identity()),
+# or None when it has not been this process. Guarded by _schema_lock: the
+# dashboard opens three connections at once on page load, and a plain flag
+# let all three run the schema block together.
+_schema_for = None
+_schema_lock = threading.Lock()
+
+
+def _schema_pending():
+    """
+    <summary>
+    Whether this process still has to apply the schema to the current file.
+    </summary>
+    <returns>True on the first connect, and again whenever history.db is a
+    different file from the one last migrated (a backup restored by hand
+    while Kodi runs).</returns>
+    """
+    return _schema_for is None or _schema_for != history.db_identity()
 
 
 def connect():
     # Same file as the snapshot history; db_path() also makes the folder.
     """
     <summary>
-    Open the play log database, applying the schema, migrations and one time repairs once per process.
+    Open the play log database, applying the schema, migrations and one time repairs once per process and per database file.
     </summary>
     <returns>An sqlite3 connection.</returns>
     <remarks>
     A failed repair is logged and retried at the next start rather than stopping the log opening.
+    The schema block runs under a lock, so concurrent first connections wait for one of them to finish it rather than each running it.
     </remarks>
     """
-    global _schema_done
+    global _schema_for
     connection = sqlite3.connect(history.db_path(), timeout=10)
-    if not _schema_done:
-        # Once per process is enough: webdata.build() alone opens five
-        # connections per rebuild, and re-running DDL on each would be felt
-        # on a Pi with a large log.
-        connection.executescript(SCHEMA)
-        for statement in MIGRATIONS:
-            try:
+    with _schema_lock:
+        if _schema_pending():
+            # Once per process and file is enough: webdata.build() alone
+            # opens five connections per rebuild, and re-running DDL on each
+            # would be felt on a Pi with a large log.
+            connection.executescript(SCHEMA)
+            for statement in MIGRATIONS:
+                try:
+                    connection.execute(statement)
+                except sqlite3.OperationalError:
+                    pass  # already present
+            for statement in INDEXES:
                 connection.execute(statement)
-            except sqlite3.OperationalError:
-                pass  # already present
-        # After the columns exist, since a repair reads them. A repair that
-        # fails must not stop the log opening: the addon is still usable
-        # with mis-stamped Trakt rows, and it is not usable at all if every
-        # connect() raises. It is left unrecorded, so the next start retries.
-        try:
-            _data_repairs(connection)
-        except Exception as err:
-            log("Could not repair stored timestamps: %s" % err,
-                xbmc.LOGWARNING)
-        _schema_done = True
+            # After the columns exist, since a repair reads them. A repair
+            # that fails must not stop the log opening: the addon is still
+            # usable with mis-stamped Trakt rows, and it is not usable at
+            # all if every connect() raises. It is left unrecorded, so the
+            # next start retries.
+            try:
+                _data_repairs(connection)
+            except Exception as err:
+                log("Could not repair stored timestamps: %s" % err,
+                    xbmc.LOGWARNING)
+            _schema_for = history.db_identity()
     return connection
 
 

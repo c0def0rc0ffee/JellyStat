@@ -1250,16 +1250,21 @@ function svgEl(tag, attrs) {
   return node;
 }
 
+/* Every locale aware call on this page pins en-GB: the dashboard is read in
+   one house, and a phone set to another locale must not show the same
+   figure with different separators from the television. */
+const LOCALE = "en-GB";
+
 /**
  * <summary>
- * A number with locale separators, or n/a for null.
+ * A number with en-GB thousands separators, or n/a for null.
  * </summary>
  * <param name="value">A number or null.</param>
  * <returns>A string.</returns>
  */
 function num(value) {
   return (value === null || value === undefined)
-    ? "n/a" : value.toLocaleString();
+    ? "n/a" : value.toLocaleString(LOCALE);
 }
 
 /* "every 3 days" reads better than "0.33 a day" once the pace drops below
@@ -1330,7 +1335,9 @@ const REC_MODES = {
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-let PREFS = { dateFormat: "iso", clock: "h24",
+/* Day, month, year by default, the en-GB order; the other formats stay
+   so a preference saved under an earlier version still applies. */
+let PREFS = { dateFormat: "dmy", clock: "h24",
               recMovies: "new", recTv: "new", npPosition: "br" };
 try {
   const saved = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
@@ -1529,7 +1536,7 @@ function renderHeatmap() {
         x: left + week * step, y: 10,
         "font-size": 10, fill: "var(--ink-dim)",
       });
-      label.textContent = date.toLocaleString(undefined, { month: "short" });
+      label.textContent = date.toLocaleString(LOCALE, { month: "short" });
       svg.append(label);
     }
   });
@@ -1709,8 +1716,8 @@ function legendRow() {
 function habitHints() {
   const log = DATA.playlog || {};
   if (log.since) {
-    const extra = log.summary.sessions.toLocaleString()
-      + " real sessions logged since " + log.since + ".";
+    const extra = num(log.summary.sessions)
+      + " real sessions logged since " + fmtDay(log.since) + ".";
     $("hourshint").textContent = "When sittings actually started. " + extra
       + (DATA.dateonly_note || "");
     $("weekdayshint").textContent = "Which days carry the viewing, from the "
@@ -2140,6 +2147,10 @@ function renderGenreDrift(host) {
    Overview only, see showView. */
 let STATS_FAILED = false;
 
+/* The view on screen, kept by showView, so a failed Refresh pressed from
+   another page can keep the stats banner off that page too. */
+let CURRENT_VIEW = "overview";
+
 /**
  * <summary>
  * Show the error banner and hide the loading notice.
@@ -2190,6 +2201,10 @@ async function load(force) {
   } catch (err) {
     STATS_FAILED = true;
     showError("Could not load the stats.\n" + err.message);
+    /* The Refresh button is in the header, so this can run from any page.
+       The banner is the Overview's, the same rule showView applies: on
+       Add-ons or Settings it would read as that page failing. */
+    if (CURRENT_VIEW !== "overview") $("error").style.display = "none";
     /* Every other page fetches its own data, and some, such as Add-ons and
        Settings, need no Jellyfin at all. The pages used to stay hidden with
        the stats, which left a box with no Jellyfin login unable to reach
@@ -2299,7 +2314,7 @@ function renderStaging() {
   const facts = el("div", { class: "facts" });
   facts.append(
     fact("plays (" + s.movies + " films, " + s.episodes + " episodes)",
-         s.sessions.toLocaleString()),
+         num(s.sessions)),
     fact("", s.date_from + " \u2192 " + s.date_to));
   if (s.dateonly) facts.append(fact("without clock times", s.dateonly));
   if (s.below_threshold) {
@@ -2310,11 +2325,11 @@ function renderStaging() {
 
   const compareLine = el("div", { class: "facts" });
   compareLine.append(
-    fact("already in the log", s.compare.duplicates.toLocaleString()),
-    fact("new", s.compare.new_sessions.toLocaleString()),
+    fact("already in the log", num(s.compare.duplicates)),
+    fact("new", num(s.compare.new_sessions)),
     fact("days where both have data", s.compare.overlap_days));
   box.append(el("p", { class: "hint" },
-    "Compared with the " + s.compare.existing_sessions.toLocaleString()
+    "Compared with the " + num(s.compare.existing_sessions)
     + " sessions already logged:"));
   box.append(compareLine);
 
@@ -2359,7 +2374,7 @@ function renderStaging() {
   };
   opts.append(
     mkRadio("merge", "Merge: add only what is new ("
-      + s.compare.new_sessions.toLocaleString() + " plays), touch nothing", true),
+      + num(s.compare.new_sessions) + " plays), touch nothing", true),
     mkRadio("replace", "Replace: this file wins for "
       + s.date_from + " \u2192 " + s.date_to));
   box.append(opts);
@@ -2435,7 +2450,7 @@ async function commitImport() {
     STAGED = null;
     host.textContent = "";
     host.append(el("p", { class: "hint" },
-      "Imported " + result.inserted.toLocaleString() + " plays"
+      "Imported " + num(result.inserted) + " plays"
       + (result.skipped ? ", skipped " + result.skipped + " duplicates" : "")
       + (result.dropped ? ", dropped " + result.dropped
          + " below the minimum length" : "")
@@ -2516,7 +2531,7 @@ function renderStamp() {
     $("stamp").textContent = "Jellyfin " + DATA.server + " · read "
       + fmtStamp(DATA.generated_at)
       + (DATA.mirror && DATA.mirror.items
-         ? " · " + DATA.mirror.items.toLocaleString()
+         ? " · " + num(DATA.mirror.items)
            + " items mirrored locally" : "");
   }
 }
@@ -4747,6 +4762,26 @@ function addonCard(addon) {
 
 /**
  * <summary>
+ * The text of a chosen file, through FileReader.
+ * </summary>
+ * <param name="file">A File from an input.</param>
+ * <returns>A promise of the text, rejected with the reader's error.</returns>
+ * <remarks>
+ * Not file.text(): that method is missing on the older WebKit the
+ * television browsers are built on, and the page is used from those.
+ * </remarks>
+ */
+function readFileText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error("The file could not be read."));
+    reader.readAsText(file);
+  });
+}
+
+/**
+ * <summary>
  * A restore button that reads a backup file, asks before replacing anything,
  * and sends it to the add-on.
  * </summary>
@@ -4770,7 +4805,7 @@ function restoreControl(addon, say) {
     say.className = "say";
     let doc;
     try {
-      doc = JSON.parse(await file.text());
+      doc = JSON.parse(await readFileText(file));
     } catch (err) {
       say.className = "say bad";
       say.textContent = "That file is not a backup: it is not JSON.";
@@ -5119,22 +5154,63 @@ function addonControl(state, field, values, changed) {
   }
   if (field.type === "multichoice") {
     const wrap = el("div", { class: "checks" });
-    const picked = Array.isArray(value) ? value : [];
-    const boxes = [];
-    (field.options || []).forEach((o) => {
-      const label = el("label", { class: "check" });
-      const box = el("input", { type: "checkbox" });
-      box.checked = picked.some((p) => sameValue(p, o.value));
-      box.setAttribute("aria-label", field.label + ": " + o.label);
-      box.addEventListener("change", () => {
-        /* In the options' order, not the order they were ticked. */
-        set(field.options.filter((opt, i) => boxes[i].checked).map((opt) => opt.value));
+    let options = [];
+    /**
+     * <summary>
+     * Draw one box per option, ticked where the stored list holds its value.
+     * </summary>
+     * <param name="list">The options.</param>
+     * <param name="more">The source has more than it sent.</param>
+     * <remarks>
+     * A stored value the options no longer offer is kept and shown ticked,
+     * for the same reason the choice menu keeps one: silently dropping it
+     * on the next save would be this page changing data nobody touched.
+     * </remarks>
+     */
+    const fill = (list, more) => {
+      options = list.slice();
+      const picked = Array.isArray(values[key]) ? values[key] : [];
+      picked.forEach((p) => {
+        if (!options.some((o) => sameValue(o.value, p))) {
+          options.push({ value: p, label: pickLabel(p) + " (current)" });
+        }
       });
-      boxes.push(box);
-      label.append(box, document.createTextNode(" " + o.label));
-      wrap.append(label);
-    });
-    return { node: wrap };
+      wrap.textContent = "";
+      const boxes = [];
+      options.forEach((o) => {
+        const label = el("label", { class: "check" });
+        const box = el("input", { type: "checkbox" });
+        box.checked = picked.some((p) => sameValue(p, o.value));
+        box.setAttribute("aria-label", field.label + ": " + o.label);
+        box.addEventListener("change", () => {
+          /* In the options' order, not the order they were ticked. */
+          set(options.filter((opt, i) => boxes[i].checked).map((opt) => opt.value));
+        });
+        boxes.push(box);
+        label.append(box, document.createTextNode(" " + o.label));
+        wrap.append(label);
+      });
+      if (more) wrap.append(el("p", { class: "hint" }, "More available than are listed."));
+      if (!options.length && !more) wrap.append(el("p", { class: "empty" }, "Nothing to choose from."));
+    };
+    if (!field.options_from) {
+      fill(field.options || [], false);
+      return { node: wrap };
+    }
+    /* Spec 7.1: the same sources as choice, static or options_from. */
+    const reload = async () => {
+      wrap.textContent = "";
+      wrap.append(el("p", { class: "empty" }, "Loading…"));
+      try {
+        const got = await addonOptions(state, field, values, "");
+        fill(got.items, got.more);
+      } catch (err) {
+        wrap.textContent = "";
+        wrap.append(el("p", { class: "empty" }, "Could not load: " + err.message));
+      }
+    };
+    reload();
+    return { node: wrap, reload: reload };
   }
   if (field.type === "picks") {
     return { node: addonPicks(state, field, values, set) };
@@ -5279,14 +5355,24 @@ function addonPicks(state, field, values, set) {
  * <param name="record">The record from the list, or null to add one.</param>
  * <param name="note">A line to show above the form, such as what was just
  * saved, or undefined.</param>
+ * <param name="carry">Edits to bring over from a form that was refused as
+ * stale: { original, edited }, the values that form opened with and the
+ * values it held when Save was pressed; or undefined.</param>
  * <remarks>
  * The record is read again first, so the form and the ETag it saves against
  * are as fresh as possible. Only the fields shown are sent: a hidden field
  * keeps its stored value, which is what lets a slot switched from weekly to
  * monthly and back get its old days again.
+ *
+ * A stale save (412) reopens the form this way rather than leaving it: the
+ * ETag it held could never succeed again, so until 14/10/2026 every further
+ * Save was refused too. An edit is kept where the server still holds what
+ * the form opened with; where the server's value moved, the server's is
+ * shown and the field is named, so nothing anybody else saved is written
+ * over unseen.
  * </remarks>
  */
-async function openRecord(state, record, note) {
+async function openRecord(state, record, note, carry) {
   const { addon, resource, schema } = state;
   const host = itemShell();
   /* A single record has no list to go back to. */
@@ -5301,7 +5387,8 @@ async function openRecord(state, record, note) {
     : String(record[resource.title_field] || record.id)));
   head.append(el("span", { class: "tag" }, addon.name));
   host.append(head);
-  if (note) host.append(el("p", { class: "hint" }, note));
+  const noteLine = el("p", { class: "hint" }, note || "");
+  if (note) host.append(noteLine);
   const loading = el("p", { class: "empty" }, "Loading\u2026");
   host.append(loading);
 
@@ -5309,6 +5396,9 @@ async function openRecord(state, record, note) {
   let etag = state.etag;
   try {
     if (isNew) {
+      /* A new record saves against the collection ETag, so after a stale
+         refusal the list is read again for the current one. */
+      if (carry) state.etag = etag = (await addonCall(addon.id, "/" + resource.name)).etag;
       values = (await addonCall(addon.id, "/" + resource.name + "/new")).data;
     } else {
       const fresh = await addonCall(addon.id, "/" + resource.name + "/" + record.id);
@@ -5327,6 +5417,24 @@ async function openRecord(state, record, note) {
       values[f.key] = JSON.parse(JSON.stringify(f.default));
     }
   });
+  /* What the form opened with, for a later stale refusal to compare against. */
+  const original = JSON.parse(JSON.stringify(values));
+  if (carry) {
+    const moved = [];
+    schema.fields.forEach((f) => {
+      if (f.type === "readonly" || carry.edited[f.key] === undefined) return;
+      if (sameValue(carry.edited[f.key], carry.original[f.key])) return;
+      if (sameValue(values[f.key], carry.original[f.key])) {
+        values[f.key] = carry.edited[f.key];
+      } else {
+        moved.push(f.label);
+      }
+    });
+    if (moved.length) {
+      noteLine.textContent += " Changed elsewhere, now showing the saved value: "
+        + moved.join(", ") + ".";
+    }
+  }
 
   const panel = el("section", { class: "panel" });
   const rows = [];
@@ -5402,7 +5510,13 @@ async function openRecord(state, record, note) {
       say.className = "say bad";
       say.textContent = err.message;
       if (err.status === 412) {
-        say.textContent = err.message + " Your changes here are not saved.";
+        /* Stale: the same as the delete path, the form is reloaded with
+           what is saved now, and the edits ride along (see openRecord). */
+        openRecord(state, record, err.message
+          + " The form has been reloaded with the current values and your "
+          + "edits kept where nothing else changed; check it and save again.",
+          { original: original, edited: values });
+        return;
       }
       const at = err.field && rows.find(({ field }) => field.key === err.field);
       if (at) {
@@ -5470,7 +5584,7 @@ async function readTraktFiles(files) {
   for (const file of files) {
     let data;
     try {
-      data = JSON.parse(await file.text());
+      data = JSON.parse(await readFileText(file));
     } catch (err) {
       skipped += 1;
       continue;
@@ -6397,6 +6511,7 @@ const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
  * </remarks>
  */
 function showView(name) {
+  CURRENT_VIEW = name;
   VIEWS.forEach((view) => {
     $("view-" + view).style.display = view === name ? "block" : "none";
   });

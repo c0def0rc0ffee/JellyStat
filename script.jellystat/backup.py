@@ -30,6 +30,7 @@ from datetime import datetime
 import xbmc
 
 import history
+import timeparse
 
 FOLDER = "backups"
 KEEP = 12
@@ -184,7 +185,7 @@ def listing():
         # create() and on into every import: a single stray file could
         # stop the backups page and block importing entirely.
         try:
-            taken_at = datetime.strptime(stamp, "%Y%m%d-%H%M%S")
+            taken_at = timeparse.strptime(stamp, "%Y%m%d-%H%M%S")
         except ValueError:
             log("Ignoring a backup with an impossible date: %s" % name,
                 xbmc.LOGWARNING)

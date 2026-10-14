@@ -32,6 +32,7 @@ import library
 import main as core
 import playlog
 import stats_sender
+import timeparse
 
 CALENDAR_DAYS = 365
 RECENT_ITEMS = 25
@@ -109,7 +110,7 @@ def _calendar(movies, episodes, offset, days=CALENDAR_DAYS,
     start = today - timedelta(days=days - 1)
     covered = None
     if coverage_start:
-        covered = datetime.strptime(coverage_start, "%Y-%m-%d").date()
+        covered = timeparse.strptime(coverage_start, "%Y-%m-%d").date()
     tally = {}
 
     def bump(day, kind):
@@ -125,7 +126,7 @@ def _calendar(movies, episodes, offset, days=CALENDAR_DAYS,
 
     session_keys = set()
     for event in sessions or []:
-        day = datetime.strptime(event["day"], "%Y-%m-%d").date()
+        day = timeparse.strptime(event["day"], "%Y-%m-%d").date()
         session_keys.add((playlog.dedup_key(event["show"], event["title"]),
                           event["day"]))
         if event["kind"] and start <= day <= today:
@@ -179,7 +180,7 @@ def _clock_and_week(movies, episodes, offset, sessions=None,
                 for day in range(7)]
     covered = None
     if coverage_start:
-        covered = datetime.strptime(coverage_start, "%Y-%m-%d").date()
+        covered = timeparse.strptime(coverage_start, "%Y-%m-%d").date()
     session_keys = set()
     for event in sessions or []:
         kind = event["kind"]

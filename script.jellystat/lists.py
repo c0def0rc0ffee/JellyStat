@@ -7,7 +7,7 @@ Named sets of titles: your own, and the ones a Trakt export carries.
 A list is the one thing the rest of the addon has no way to express. The
 library mirror answers "what is on the server", the play log answers "what
 did I watch and when", ratings answer "what did I think of it". None of
-them can hold *"films to watch with Dad at Christmas"* - a set somebody
+them can hold *"films to watch with Dad at Christmas"*: a set somebody
 decided on, with no property in common that a query could find.
 
 Two things make a list here rather than a saved search:

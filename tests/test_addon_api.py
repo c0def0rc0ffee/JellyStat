@@ -218,7 +218,7 @@ def test_forward(port):
     SEEN.clear()
     browser = {"Content-Type": "application/json", "If-Match": '"e1"',
                "Cookie": "jellystat_auth=secret", "X-Auth-Token": "dashpass",
-               "X-Forwarded-For": "1.2.3.4", "Host": "kodi.local:8099"}
+               "X-Forwarded-For": "123.123.123.4", "Host": "kodi.local:8099"}
     status, body, headers = addon_api.forward("service.fake/slots/1", "q=a b&x=1", "PUT",
                                               b'{"a":1}', browser)
     equal(status, 200, "status passed back")

@@ -71,6 +71,31 @@ def db_path():
     return os.path.join(folder, DB_NAME)
 
 
+def db_identity():
+    """
+    <summary>
+    Which file the history database is right now, for the once per process
+    schema checks in playlog and library.
+    </summary>
+    <returns>(st_dev, st_ino) of the database file, or None when there is no
+    file yet.</returns>
+    <remarks>
+    Those modules apply their migrations once per process and remember that
+    they did. A backup restored by hand while Kodi runs (mv or os.replace
+    over history.db) is a different inode, so remembering the identity along
+    with the flag lets them notice and migrate the restored file instead of
+    failing on a column it does not have. A copy made with cp keeps the
+    inode and is not noticed; the size and mtime cannot stand in for it
+    because the add-on's own writes change both on every sync.
+    </remarks>
+    """
+    try:
+        stat = os.stat(db_path())
+    except OSError:
+        return None
+    return (stat.st_dev, stat.st_ino)
+
+
 def connect():
     """
     <summary>

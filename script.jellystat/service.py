@@ -28,6 +28,7 @@ recording every sitting with its real start and end time into the play log.
 </remarks>
 """
 
+import traceback
 from datetime import datetime, timedelta
 
 import xbmc
@@ -158,10 +159,25 @@ def web_config(addon):
     <summary>
     The settings a running server cannot change under itself.
     </summary>
+    <param name="addon">The addon whose settings are read.</param>
+    <returns>A tuple; a change in it means the server must be restarted.</returns>
+    <remarks>
+    The password is in here because the bind address depends on it:
+    webserver.start() keeps a dashboard that is set to be reachable from
+    other machines on this machine only until a password exists. Until
+    14/10/2026 the tuple left the password out, so clearing it left a server
+    already bound to every interface open to the network with no password
+    until Kodi restarted, and setting one did not open the network until
+    then either, while the settings screen said it would within seconds.
+    Only whether a password exists matters to the bind, but the whole value
+    is compared so a change of password also signs every browser out
+    through the server restart.
+    </remarks>
     """
     return (addon.getSetting("web_enabled"),
             addon.getSetting("web_port"),
-            addon.getSetting("web_bind_all"))
+            addon.getSetting("web_bind_all"),
+            (addon.getSetting("web_password") or "").strip())
 
 
 def sync_web(addon, applied):
@@ -271,7 +287,8 @@ def publish_skin_properties(now=None):
         week = screentime.screen_time(WEEK_DAYS, now)
     except Exception as err:  # the loop must outlive a broken database
         stats_sender.log("Could not publish the skin properties: %s" % err,
-                         xbmc.LOGWARNING)
+                         xbmc.LOGERROR)
+        stats_sender.log(traceback.format_exc(), xbmc.LOGERROR)
         return
     month, ever = data["this_month"], data["all_time"]
     if not ever["plays"]:
@@ -399,7 +416,8 @@ def run():
                 history.record(data["snapshot"], now)
             except Exception as err:
                 stats_sender.log("Could not record today's history: %s" % err,
-                                 xbmc.LOGWARNING)
+                                 xbmc.LOGERROR)
+                stats_sender.log(traceback.format_exc(), xbmc.LOGERROR)
     play_logger.close()
     webserver.stop()
 

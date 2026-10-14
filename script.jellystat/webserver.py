@@ -26,6 +26,7 @@ import secrets
 import socket
 import threading
 import time
+import traceback
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -71,6 +72,37 @@ def log(message, level=xbmc.LOGINFO):
     <param name="level">Kodi log level, info by default.</param>
     """
     xbmc.log("[JellyStat] %s" % message, level)
+
+
+def log_failure(message):
+    """
+    <summary>
+    Log an unexpected exception with its traceback, at error level.
+    </summary>
+    <param name="message">What was being done, and the error's own text.</param>
+    <remarks>
+    For the broad except blocks that keep the server alive. Until 14/10/2026
+    they logged str(err) alone, and a "'NoneType' object is not callable"
+    from a rebuild named no file and no line, so the next one would have been
+    as blind as the first. Call this from inside an except block only; outside
+    one format_exc() has nothing to format.
+    </remarks>
+    """
+    log(message, xbmc.LOGERROR)
+    log(traceback.format_exc(), xbmc.LOGERROR)
+
+
+class BadLength(ValueError):
+    """
+    <summary>
+    A Content-Length that cannot be read from: not a number, or negative.
+    </summary>
+    <remarks>
+    A ValueError so the callers that already catch one for a non numeric
+    header keep working; the connection is closed by whoever raises it,
+    because nothing can be read safely past a length that was never real.
+    </remarks>
+    """
 
 
 def _addon():
@@ -464,8 +496,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self._dispatch_get(route)
         except Exception as err:
-            log("GET %s failed: %s" % (route.path, err),
-                xbmc.LOGERROR)
+            log_failure("GET %s failed: %s" % (route.path, err))
             self._send_json(500, {"error": str(err)})
 
     def _dispatch_get(self, route):
@@ -610,6 +641,11 @@ class Handler(BaseHTTPRequestHandler):
         only the last definition of a name, so every zero argument call
         raised TypeError and the refused browser saw a dropped connection
         instead of the 403 or 401. The two now have different names.
+
+        At most importer.MAX_BYTES is read. A body announced as larger than
+        that is not read to the end, so the connection is marked to close
+        once the refusal has gone out: the remainder would otherwise be
+        parsed as the next request on this keep alive connection.
         </remarks>
         """
         try:
@@ -617,6 +653,8 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self.close_connection = True
             return
+        if length > importer.MAX_BYTES:
+            self.close_connection = True
         if length > 0:
             try:
                 self.rfile.read(min(length, importer.MAX_BYTES))
@@ -628,6 +666,12 @@ class Handler(BaseHTTPRequestHandler):
         <summary>
         Route a POST: login first, then everything that changes state, behind the Host check, the cross origin check and the password.
         </summary>
+        <remarks>
+        One guard around the routes, as do_GET has: a Content-Length that
+        cannot be read from answers 400, and anything else unexpected answers
+        500 with the reason logged, rather than resetting the socket and
+        leaving the page with a connection error.
+        </remarks>
         """
         if not _host_allowed(self.headers.get("Host")):
             self._reject_host()
@@ -649,6 +693,21 @@ class Handler(BaseHTTPRequestHandler):
             self._drain_announced()
             self._send_json(401, {"error": "Password required."})
             return
+        try:
+            self._dispatch_post(path)
+        except BadLength as err:
+            self._send_json(400, {"error": str(err)})
+        except Exception as err:
+            log_failure("POST %s failed: %s" % (path, err))
+            self._send_json(500, {"error": str(err)})
+
+    def _dispatch_post(self, path):
+        """
+        <summary>
+        Route one authorised POST by its path.
+        </summary>
+        <param name="path">The URL path, query removed.</param>
+        """
         if path.startswith("/api/addons/"):
             self._serve_addon("POST", urlparse(self.path))
             return
@@ -817,8 +876,19 @@ class Handler(BaseHTTPRequestHandler):
         <param name="limit">Bytes.</param>
         <returns>The body bytes.</returns>
         <exception cref="importer.ImportError_">When the announced length is over the limit.</exception>
+        <exception cref="BadLength">When the header is not a number or is
+        negative. A negative length used to pass the limit check and reach
+        rfile.read(-n), which reads to end of stream and held the worker
+        thread until the socket timeout.</exception>
         """
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self.close_connection = True
+            raise BadLength("The request had no readable length.")
+        if length < 0:
+            self.close_connection = True
+            raise BadLength("The request announced a negative length.")
         if length > limit:
             # Drain what was announced before answering. Refusing without
             # reading leaves the client writing into a closed socket, and
@@ -851,12 +921,16 @@ class Handler(BaseHTTPRequestHandler):
         The default cap suits the small command bodies most endpoints take.
         An import envelope is a file upload wearing a JSON hat and passes
         its own, much larger, limit.
+
+        A body that is not JSON reads as an empty dict, so each route
+        reports its own missing field; a length that cannot be read from
+        (BadLength) is left to propagate, because there is no body to be
+        lenient about.
         </remarks>
         """
+        raw = self._read_body(limit)
         try:
-            return json.loads(self._read_body(limit).decode("utf-8"))
-        except importer.ImportError_:
-            raise
+            return json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             return {}
 
@@ -875,6 +949,8 @@ class Handler(BaseHTTPRequestHandler):
         except importer.ImportError_ as err:
             self._send_json(400, {"error": str(err)})
             return
+        except BadLength:
+            raise  # do_POST answers 400; nothing was read
         except Exception as err:
             log("Import staging failed: %s" % err, xbmc.LOGERROR)
             self._send_json(500, {"error": "Could not read the file: %s"
@@ -958,8 +1034,8 @@ class Handler(BaseHTTPRequestHandler):
                 "text/html; charset=utf-8")
             return
         # A fresh random token per sign-in, good for SESSION_HOURS and no
-        # longer. Still a session cookie as far as the browser is concerned
-        # - closing it forgets the cookie, but the server now decides when
+        # longer. Still a session cookie as far as the browser is concerned:
+        # closing it forgets the cookie, but the server now decides when
         # it stops working rather than trusting the browser to.
         cookie = ("%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Strict"
                   % (COOKIE, _new_session(password), SESSION_HOURS * 3600))
@@ -986,7 +1062,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": str(err)})
             return
         except Exception as err:  # a broken page beats a dead server
-            log("Dashboard data failed: %s" % err, xbmc.LOGERROR)
+            log_failure("Dashboard data failed: %s" % err)
             self._send_json(500, {"error": "Could not build the stats: %s"
                                            % err})
             return
@@ -1258,7 +1334,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": str(err)})
             return
         except Exception as err:
-            log("Suggestions failed: %s" % err, xbmc.LOGERROR)
+            log_failure("Suggestions failed: %s" % err)
             self._send_json(500, {"error": "Could not build suggestions: %s"
                                            % err})
             return
@@ -1483,7 +1559,7 @@ class Handler(BaseHTTPRequestHandler):
         The export as a .zip, unpacked here rather than in the browser.
         </summary>
         <remarks>
-        Browsers have no zip reader - `DecompressionStream` does raw
+        Browsers have no zip reader: `DecompressionStream` does raw
         deflate and stops there, so doing this client-side would mean
         hand-parsing a central directory in JavaScript. Python has had
         zipfile since forever, so the archive comes across whole and is
@@ -1728,7 +1804,7 @@ def start():
     try:
         server = ThreadingHTTPServer((host, port), Handler)
     except OSError as err:
-        log("Could not start the dashboard on %s:%d - %s" % (host, port, err),
+        log("Could not start the dashboard on %s:%d: %s" % (host, port, err),
             xbmc.LOGERROR)
         return False
     server.daemon_threads = True

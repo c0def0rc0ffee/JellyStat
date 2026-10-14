@@ -364,7 +364,7 @@ def status():
     if show:
         code = "S%d \u00b7 E%d" % (item.get("season") or 0,
                                     item.get("episode") or 0)
-        label = "%s - %s" % (code, title)
+        label = "%s · %s" % (code, title)
 
     # The Jellyfin id is in the path Jellyfin for Kodi wrote, so the popup
     # can show real artwork rather than Kodi's cached thumbnail.

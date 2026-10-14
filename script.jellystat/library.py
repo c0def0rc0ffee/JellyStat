@@ -38,6 +38,7 @@ library anyway, so mirroring adds no Jellyfin traffic at all.
 import json
 import re
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 
 import xbmc
@@ -114,7 +115,12 @@ def log(message, level=xbmc.LOGINFO):
     xbmc.log("[JellyStat] %s" % message, level)
 
 
-_schema_done = False
+# The database file the schema was last applied to (history.db_identity()),
+# or None when it has not been this process; the same shape as playlog's,
+# and for the same two reasons: concurrent first connections, and a backup
+# restored by hand while Kodi runs.
+_schema_for = None
+_schema_lock = threading.Lock()
 
 
 def _ulower(value):
@@ -141,25 +147,27 @@ def connect():
     </summary>
     <returns>An sqlite3 connection.</returns>
     <remarks>
-    Columns and indexes that already exist are skipped silently.
+    Columns and indexes that already exist are skipped silently. The schema
+    block runs once per process and per database file, under a lock.
     </remarks>
     """
-    global _schema_done
+    global _schema_for
     connection = sqlite3.connect(history.db_path(), timeout=10)
     connection.create_function("ULOWER", 1, _ulower)
-    if not _schema_done:
-        connection.executescript(SCHEMA)
-        for statement in RATING_COLUMNS:
-            try:
-                connection.execute(statement)
-            except sqlite3.OperationalError:
-                pass  # column already present
-        for statement in RATING_INDEXES:
-            try:
-                connection.execute(statement)
-            except sqlite3.OperationalError:
-                pass
-        _schema_done = True
+    with _schema_lock:
+        if _schema_for is None or _schema_for != history.db_identity():
+            connection.executescript(SCHEMA)
+            for statement in RATING_COLUMNS:
+                try:
+                    connection.execute(statement)
+                except sqlite3.OperationalError:
+                    pass  # column already present
+            for statement in RATING_INDEXES:
+                try:
+                    connection.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
+            _schema_for = history.db_identity()
     return connection
 
 
@@ -743,8 +751,8 @@ def browse_rows(media):
     Every title of a medium the mirror holds, flat, for the library page.
     </summary>
     <remarks>
-    Films come straight from items. Shows are assembled from their episodes
-    - the series row carries the name and artwork, the episodes carry what
+    Films come straight from items. Shows are assembled from their episodes:
+    the series row carries the name and artwork, the episodes carry what
     was actually watched, so "how much of this have I seen" is answered by
     counting them rather than by a play_count that series rows do not keep.
     </remarks>
