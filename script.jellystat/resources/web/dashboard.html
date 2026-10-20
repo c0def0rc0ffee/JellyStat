@@ -1110,6 +1110,32 @@ label.restorebtn input { display: none; }
     </section>
 
     <section class="panel">
+      <h2>Jellyfin dates</h2>
+      <p class="hint">A title's "last watched" date is taken from the play
+        log first: the newest completed sitting recorded here, imported, or
+        detected from a Jellyfin date change. Jellyfin's own date is only
+        used for a title with no logged sitting. When the server re-marks
+        hundreds of titles on one day, change detection copies every one of
+        those dates in as a sitting; this panel finds such days and lets you
+        set them aside. Nothing is deleted, and a day can be restored.</p>
+      <div id="bulkdays"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Jellyfin follows these dates</h2>
+      <p class="hint">JellyStat is the record of when a title was watched,
+        and Jellyfin is kept in step with it: every title whose logged date
+        differs from Jellyfin's has its last played date written across, in
+        the background, after an import or a day being set aside and on the
+        service's regular check. Jellyfin for Kodi then carries the date
+        into Kodi, so a skin's "last watched" label agrees with this page.
+        Only the date is written; play counts, the watched flag and resume
+        positions are left as they are. The toggle is in the add-on's
+        settings under History.</p>
+      <div id="datepush"></div>
+    </section>
+
+    <section class="panel">
       <h2>Import from a Trakt export file</h2>
       <p class="hint">Ask Trakt for an export of your data, then drop the
         .zip here exactly as it arrived. If you have already
@@ -4146,6 +4172,67 @@ async function loadReconcile() {
 
 /**
  * <summary>
+ * Fetch the days that look like a bulk re-mark and draw the panel.
+ * </summary>
+ */
+async function loadBulkDays() {
+  try {
+    const response = await fetch("/api/playlog/bulk", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    renderBulkDays(data.bulk_days || []);
+  } catch (err) { return; }
+}
+
+/**
+ * <summary>
+ * The Jellyfin dates panel: one line per suspect day with a set aside or restore button.
+ * </summary>
+ * <param name="days">Rows from /api/playlog/bulk: day, rows, set_aside.</param>
+ * <remarks>
+ * A day is drawn in whichever state it is in. Rows set aside are still
+ * counted, because they still exist; the button simply goes the other way.
+ * </remarks>
+ */
+function renderBulkDays(days) {
+  const host = $("bulkdays");
+  host.textContent = "";
+  if (!days.length) {
+    host.append(el("p", { class: "hint" },
+      "No day of Jellyfin detected plays stands out as a bulk re-mark."));
+    return;
+  }
+  days.forEach((entry) => {
+    const aside = entry.set_aside >= entry.rows;
+    const line = el("div", { class: "filerow" });
+    line.append(el("span", {},
+      num(entry.rows) + " Jellyfin dates on " + fmtDay(entry.day)
+      + (aside ? " are set aside and count for nothing."
+               : " look like a bulk re-mark.")));
+    const button = el("button", { class: "action", type: "button" },
+      aside ? "Restore them" : "Set them aside");
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      button.textContent = "\u2026";
+      try {
+        const reply = await api("/api/playlog/set-aside",
+                                { day: entry.day, restore: aside });
+        renderBulkDays(reply.bulk_days || []);
+        await load(true);
+      } catch (err) {
+        host.append(el("p", { class: "warn" },
+          "Could not change that day: " + err.message));
+        button.disabled = false;
+        button.textContent = aside ? "Restore them" : "Set them aside";
+      }
+    });
+    line.append(button);
+    host.append(line);
+  });
+}
+
+/**
+ * <summary>
  * The reconcile card: counts, examples, and push or clear buttons, or the running job.
  * </summary>
  */
@@ -4257,6 +4344,138 @@ function watchReconcile() {
       // One read after the job is known to be over, so the card is never
       // left holding counts gathered while it was still writing.
       loadReconcile();
+    }
+  }, 2000);
+}
+
+/* ---------- Jellyfin follows the dates ---------- */
+
+let DATEPUSH = null;
+let datePushTimer = null;
+
+/**
+ * <summary>
+ * Fetch how the log's dates compare with Jellyfin's and draw the panel.
+ * </summary>
+ */
+async function loadDatePush() {
+  try {
+    const response = await fetch("/api/dates", { cache: "no-store" });
+    if (!response.ok) return;
+    DATEPUSH = await response.json();
+  } catch (err) { return; }
+  renderDatePush();
+}
+
+/**
+ * <summary>
+ * The date write back card: how many titles differ, examples, the running job or a button.
+ * </summary>
+ * <remarks>
+ * A count of zero is the normal state and says so. A refused count is
+ * shown separately, because a server that kept its own date is not the
+ * same as one that has not been asked yet.
+ * </remarks>
+ */
+function renderDatePush() {
+  const host = $("datepush");
+  if (!DATEPUSH) return;
+  host.textContent = "";
+
+  if (DATEPUSH.enabled === false) {
+    host.append(el("p", { class: "warn" },
+      "Turned off in the add-on settings, so Jellyfin's dates are left "
+      + "as they are."));
+  }
+
+  const facts = el("div", { class: "facts" });
+  [[num(DATEPUSH.differing), "titles where Jellyfin's date differs"],
+   [num(DATEPUSH.refused), "kept by the server this session"]]
+    .forEach(([value, label]) => {
+      const span = el("span");
+      span.append(el("b", {}, value), document.createTextNode(" " + label));
+      facts.append(span);
+    });
+  host.append(facts);
+
+  if (DATEPUSH.examples && DATEPUSH.examples.length) {
+    const list = el("p", { class: "eg" });
+    list.append(document.createTextNode("E.g. "));
+    DATEPUSH.examples.forEach((x, i) => {
+      if (i) list.append(document.createTextNode(", "));
+      list.append(el("b", {}, x.name));
+      list.append(document.createTextNode(" here " + fmtDay(x.here)
+        + " vs Jellyfin " + (x.jellyfin ? fmtDay(x.jellyfin) : "none")));
+    });
+    host.append(list);
+  }
+
+  const job = DATEPUSH.job || {};
+  if (job.state === "running") {
+    const pct = job.total ? Math.round(100 * job.done / job.total) : 0;
+    const bar = el("div", { class: "bar" });
+    const fill = el("i");
+    fill.style.width = pct + "%";
+    bar.append(fill);
+    host.append(el("p", { class: "hint" },
+      "Writing to Jellyfin: " + num(job.done) + " of " + num(job.total)
+      + (job.refused ? " (" + job.refused + " kept by the server)" : "")
+      + (job.failed ? " (" + job.failed + " failed)" : "")));
+    host.append(bar);
+    watchDatePush();
+    return;
+  }
+  if (job.state === "finished" && job.message) {
+    host.append(el("p", { class: "hint" }, job.message + "."));
+  }
+
+  if (!DATEPUSH.differing) {
+    host.append(el("p", { class: "hint" },
+      "Jellyfin holds the same last watched date as this page for every "
+      + "title the log knows."));
+    return;
+  }
+  const row = el("div", { class: "filerow" });
+  const button = el("button", { class: "action", type: "button" },
+    "Write " + num(DATEPUSH.differing) + " dates to Jellyfin now");
+  button.addEventListener("click", startDatePush);
+  row.append(button);
+  host.append(row);
+}
+
+/**
+ * <summary>
+ * Start a manual write back and watch it.
+ * </summary>
+ */
+async function startDatePush() {
+  const host = $("datepush");
+  host.textContent = "";
+  host.append(el("p", { class: "hint" }, "Starting…"));
+  try {
+    await fetch("/api/dates/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+  } catch (err) { /* the poll below reports whatever happened */ }
+  loadDatePush();
+  watchDatePush();
+}
+
+/**
+ * <summary>
+ * Poll the write back every two seconds until it stops, then read once more.
+ * </summary>
+ */
+function watchDatePush() {
+  if (datePushTimer) clearInterval(datePushTimer);
+  datePushTimer = setInterval(async () => {
+    await loadDatePush();
+    if (!DATEPUSH || !DATEPUSH.job || DATEPUSH.job.state !== "running") {
+      clearInterval(datePushTimer);
+      datePushTimer = null;
+      loadDatePush();
     }
   }, 2000);
 }
@@ -6028,6 +6247,14 @@ function renderTraktOutcome(result, token) {
     host.append(row);
   }
 
+  if (plays) {
+    host.append(el("p", { class: "hint" },
+      "Every title with an imported sitting now shows Trakt's date as its "
+      + "last watched date. Jellyfin's own date is only used for titles "
+      + "the log has no sitting for, so a bulk re-mark on the server no "
+      + "longer decides what the library, search and the item pages "
+      + "show."));
+  }
   if ((result.backups || []).length) {
     host.append(el("p", { class: "hint" },
       "Backups were taken either side and are in the list below; nothing "
@@ -6365,7 +6592,8 @@ function fillSittings(box, rows, playCount, limit, moreHint) {
       detail.push(Math.round(sitting.watched_seconds / 60) + " min");
     }
     detail.push((sitting.source || "kodi")
-                + (sitting.completed ? " ✓" : ""));
+                + (sitting.completed ? " ✓" : "")
+                + (sitting.set_aside ? " · set aside" : ""));
     entry.append(document.createTextNode(" · " + detail.join(" · ")));
     box.append(entry);
   });
@@ -6530,6 +6758,8 @@ document.querySelectorAll("nav.side button").forEach((btn) => {
       renderDataFacts();
       loadBackups();
       loadReconcile();
+      loadBulkDays();
+      loadDatePush();
     }
     if (btn.dataset.view === "settings") renderSettings();
     if (btn.dataset.view === "movies" || btn.dataset.view === "tv") {
@@ -7167,7 +7397,8 @@ function sittingsPanel(sittings) {
         ? Math.round(row.watched_seconds / 60) + " min"
         : "n/a" },
     { label: "Source", cell: (row) => (row.source || "kodi")
-        + (row.completed ? " ✓" : "") },
+        + (row.completed ? " ✓" : "")
+        + (row.set_aside ? " · set aside" : "") },
   ], sittings));
   panel.append(wrap);
   return panel;
@@ -7225,6 +7456,13 @@ async function openMovie(id) {
      plural(movie.play_count, "play").replace(/^\d+ /, "")],
     [movie.last_played ? fmtStamp(movie.last_played) : null,
      "last watched"],
+    /* Only when the two differ: the mirror's copy of Jellyfin's date is
+       worth a glance exactly when the log has overruled it. */
+    [movie.jellyfin_last_played && movie.last_played
+     && movie.jellyfin_last_played.slice(0, 10)
+        !== movie.last_played.slice(0, 10)
+       ? fmtDay(movie.jellyfin_last_played) : null,
+     "Jellyfin's own date"],
     [movie.first_seen ? fmtDay(movie.first_seen) : null,
      "first seen by the mirror"],
     [movie.present ? null : "no longer on Jellyfin", ""],

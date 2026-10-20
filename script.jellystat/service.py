@@ -35,6 +35,7 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 
+import dates
 import history
 import player
 import screentime
@@ -392,6 +393,10 @@ def run():
         now = datetime.now()
         applied = sync_web(addon, applied)
         publish_skin_properties(now)
+        # After the properties, which have just refreshed the mirror: the
+        # write back compares the log against the mirror's copy of
+        # Jellyfin's dates, so it wants that copy as fresh as it gets.
+        dates.nudge()
 
         if (addon.getSetting("endpoint_url").strip() and is_due(addon, now)
                 and (retry_after is None or now >= retry_after)):

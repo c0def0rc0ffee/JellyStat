@@ -44,6 +44,7 @@ import xbmc
 import xbmcaddon
 
 import library
+import playlog
 import main as core
 
 ADDON_ID = "script.jellystat"
@@ -136,6 +137,12 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
     """
     clause = SCOPE_CLAUSES.get(scope) or SCOPE_CLAUSES[DEFAULT_SCOPE]
     connection = _connect()
+    # The dates shown follow the dashboard's last watched rule (the play
+    # log first, Jellyfin's date as the fallback). The ORDER BY below still
+    # uses the mirror's column, so paging stays stable; the rule is applied
+    # to what each row displays.
+    playlog.connect().close()
+    dates = library.LastWatched(connection)
     if media == "movies":
         rows = connection.execute(
             "SELECT id, name, year, last_played, play_count, genres, rating, "
@@ -147,7 +154,8 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
             "SELECT COUNT(*) FROM items WHERE media = 'movie' AND %s"
             % clause).fetchone()[0]
         items = [{"id": row[0], "name": row[1], "year": row[2],
-                  "last_played": row[3], "plays": row[4],
+                  "last_played": dates.title(row[3], None, row[1], row[2]),
+                  "plays": row[4],
                   "genres": json.loads(row[5] or "[]"),
                   "community": row[6], "score": row[7],
                   "sync": row[8], "jf_score": row[9],
@@ -165,7 +173,8 @@ def unrated(media="movies", scope=DEFAULT_SCOPE, limit=100, offset=0):
             "SELECT COUNT(*) FROM items WHERE media = 'episode' AND %s"
             % clause).fetchone()[0]
         items = [{"id": row[0], "name": row[1], "show": row[2],
-                  "season": row[3], "episode": row[4], "last_played": row[5],
+                  "season": row[3], "episode": row[4],
+                  "last_played": dates.title(row[5], row[2], row[1]),
                   "genres": json.loads(row[6] or "[]"),
                   "community": row[7], "score": row[8],
                   "sync": row[9], "jf_score": row[10],

@@ -100,7 +100,30 @@ MIGRATIONS = [
     "ALTER TABLE plays ADD COLUMN assumed INTEGER NOT NULL DEFAULT 0",
     # The mirror row this play belongs to, where one could be found.
     "ALTER TABLE plays ADD COLUMN item_id TEXT",
+    # 1 when the row has been set aside: kept, never deleted, but left out
+    # of every chart, total and last watched date. Exists for the bulk
+    # re-mark case: a server side "mark all watched" moves hundreds of
+    # LastPlayedDates to one day, and change detection faithfully logs
+    # every one of them as a sitting. See bulk_days() and set_aside().
+    "ALTER TABLE plays ADD COLUMN set_aside INTEGER NOT NULL DEFAULT 0",
 ]
+
+# A day of Jellyfin detected rows is treated as a bulk re-mark when it holds
+# at least this many and at least BULK_FACTOR times the median of the other
+# days that have any. The first guards a fresh log where one evening's
+# viewing is the only day there is; the second is what separates a server
+# wide "mark watched" from a genuinely busy Sunday.
+BULK_MIN_ROWS = 20
+BULK_FACTOR = 5
+
+# Change detected rows are the only ones a bulk re-mark can produce. The
+# prefix match rather than the exact 'jellyfin-sync' is deliberate: a log
+# written by an earlier build may spell the source 'jellyfin', and both
+# mean "copied from the server's date", which is the thing in question.
+BULK_SOURCE_LIKE = "jellyfin%"
+
+# The condition every reader applies: live rows only.
+LIVE = "set_aside = 0"
 
 
 def log(message, level=xbmc.LOGINFO):
@@ -469,7 +492,7 @@ def since():
     the only account of those days and are used unchallenged.
     </remarks>
     """
-    rows = _rows("SELECT MIN(day) FROM plays")
+    rows = _rows("SELECT MIN(day) FROM plays WHERE " + LIVE)
     return rows[0][0] if rows and rows[0][0] else None
 
 
@@ -496,13 +519,13 @@ def events(from_day=None, days=None):
     """
     query = ("SELECT day, hour, weekday, media, title, show, season, episode, "
              "year, started_at, ended_at, watched_seconds, completed, source "
-             "FROM plays")
+             "FROM plays WHERE " + LIVE)
     params = []
     if from_day is None and days:
         from_day = (datetime.now()
                     - timedelta(days=days - 1)).strftime("%Y-%m-%d")
     if from_day:
-        query += " WHERE day >= ?"
+        query += " AND day >= ?"
         params.append(from_day)
     query += " ORDER BY started_at"
     return [{
@@ -526,7 +549,7 @@ def summary():
                  "SUM(CASE WHEN media = 'episode' THEN 1 ELSE 0 END), "
                  "SUM(CASE WHEN assumed = 1 THEN 1 ELSE 0 END), "
                  "SUM(CASE WHEN assumed = 1 THEN watched_seconds ELSE 0 END) "
-                 "FROM plays")
+                 "FROM plays WHERE " + LIVE)
     if not rows or not rows[0][0]:
         return {"sessions": 0, "hours_watched": 0.0, "movies": 0,
                 "episodes": 0, "since": None, "assumed": 0,
@@ -555,7 +578,8 @@ def rewatches(limit=10):
     """
     rows = _rows(
         "SELECT title, show, media, COUNT(*) AS sessions, MIN(day), MAX(day) "
-        "FROM plays GROUP BY LOWER(COALESCE(show, '')), LOWER(title), media "
+        "FROM plays WHERE " + LIVE + " "
+        "GROUP BY LOWER(COALESCE(show, '')), LOWER(title), media "
         "HAVING sessions > 1 ORDER BY sessions DESC, MAX(day) DESC LIMIT ?",
         (limit,))
     return [{"title": row[0], "show": row[1], "media": row[2],
@@ -571,9 +595,121 @@ def recent(limit=25):
     """
     rows = _rows(
         "SELECT started_at, ended_at, media, title, show, season, episode, "
-        "watched_seconds, completed, source FROM plays "
+        "watched_seconds, completed, source FROM plays WHERE " + LIVE + " "
         "ORDER BY started_at DESC LIMIT ?", (limit,))
     return [{"started_at": row[0], "ended_at": row[1], "media": row[2],
              "title": row[3], "show": row[4], "season": row[5],
              "episode": row[6], "watched_seconds": row[7],
              "completed": bool(row[8]), "source": row[9]} for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Bulk re-marks: rows set aside, never deleted
+# ---------------------------------------------------------------------------
+
+def _median(values):
+    """
+    <summary>
+    The middle value of a list, or 0 for an empty one.
+    </summary>
+    <param name="values">Numbers.</param>
+    <returns>The median; the mean of the middle pair for an even count.</returns>
+    """
+    ordered = sorted(values)
+    if not ordered:
+        return 0
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2.0
+
+
+def bulk_days():
+    """
+    <summary>
+    Days whose Jellyfin detected rows look like a server side bulk re-mark.
+    </summary>
+    <returns>A list of {day, rows, set_aside}, newest first, where `rows` is
+    every row on that day copied from a Jellyfin date and `set_aside` how
+    many of them are currently set aside.</returns>
+    <remarks>
+    A day qualifies when it holds BULK_MIN_ROWS or more such rows and at
+    least BULK_FACTOR times the median of the other days that have any.
+    The median of the other days, not of all days, so a log whose only
+    Jellyfin detected day is the bulk one still reports it. A day already
+    set aside is still returned (its figures do not change: the rows are
+    all still there), which is what lets the dashboard offer to restore
+    it.
+
+    Only rows whose source says they were copied from Jellyfin's date are
+    counted. A Trakt import or an evening logged by this box can also put
+    many rows on one day, and those are real.
+    </remarks>
+    """
+    rows = _rows(
+        "SELECT day, COUNT(*), SUM(set_aside) FROM plays "
+        "WHERE source LIKE ? GROUP BY day", (BULK_SOURCE_LIKE,))
+    counts = {day: count for day, count, _ in rows}
+    aside = {day: (held or 0) for day, _, held in rows}
+    out = []
+    for day, count in counts.items():
+        others = [c for d, c in counts.items() if d != day]
+        if count < BULK_MIN_ROWS:
+            continue
+        if count < BULK_FACTOR * _median(others):
+            continue
+        out.append({"day": day, "rows": count, "set_aside": aside[day]})
+    out.sort(key=lambda entry: entry["day"], reverse=True)
+    return out
+
+
+def set_aside(day, restore=False):
+    """
+    <summary>
+    Set aside, or restore, every Jellyfin detected row on one day.
+    </summary>
+    <param name="day">YYYY-MM-DD, local.</param>
+    <param name="restore">True puts the day's rows back into use.</param>
+    <returns>How many rows changed state.</returns>
+    <remarks>
+    Nothing is deleted: the rows keep their source, their timestamp and
+    their place in the file, and a restore is the same update the other
+    way. Only rows copied from a Jellyfin date are touched, so a sitting
+    this box recorded or a Trakt play on the same day is left exactly as
+    it was.
+    </remarks>
+    <exception cref="ValueError">The day is not a YYYY-MM-DD date.</exception>
+    """
+    day = (day or "").strip()[:10]
+    timeparse.strptime(day, "%Y-%m-%d")
+    connection = connect()
+    try:
+        with connection:
+            cursor = connection.execute(
+                "UPDATE plays SET set_aside = ? WHERE day = ? "
+                "AND source LIKE ? AND set_aside = ?",
+                (0 if restore else 1, day, BULK_SOURCE_LIKE,
+                 1 if restore else 0))
+            changed = cursor.rowcount
+    finally:
+        connection.close()
+    log("%s %d Jellyfin detected play row(s) on %s"
+        % ("Restored" if restore else "Set aside", changed, day))
+    return changed
+
+
+def set_aside_keys():
+    """
+    <summary>
+    The (dedup key, day) of every row currently set aside.
+    </summary>
+    <returns>A set of ((show, title), YYYY-MM-DD) tuples.</returns>
+    <remarks>
+    For the habit charts' fallback: an item whose Jellyfin date was set
+    aside here must not creep back into the calendar through the "no
+    session for this date, so count the server's date" path, or setting
+    the day aside would change nothing on screen.
+    </remarks>
+    """
+    return {(dedup_key(show, title), day) for show, title, day in _rows(
+        "SELECT show, title, day FROM plays WHERE set_aside = 1")}

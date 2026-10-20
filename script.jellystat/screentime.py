@@ -26,7 +26,7 @@ matters because getting it wrong would invent numbers:
 </remarks>
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import xbmc
 
@@ -80,17 +80,14 @@ def _connect():
 # Tiles
 # ---------------------------------------------------------------------------
 
-def _tile_row(connection, since=None):
+def _tile_row(connection):
     """
     <summary>
-    Counts and estimated minutes for everything, or since a date.
+    Counts and estimated minutes for everything the mirror holds.
     </summary>
     """
     # Series rows exist to hold show-level ratings; they are not watched
     # items and must not be counted as titles or minutes here.
-    where = ("WHERE media IN ('movie', 'episode')"
-             + (" AND last_played >= ?" if since else ""))
-    params = (since,) if since else ()
     row = connection.execute(
         "SELECT "
         "SUM(CASE WHEN media='episode' THEN 1 ELSE 0 END), "
@@ -100,7 +97,7 @@ def _tile_row(connection, since=None):
         # Runtime times plays: what the item is worth, however often watched.
         "SUM(COALESCE(runtime_minutes, 0) * MAX(play_count, 1)), "
         "SUM(CASE WHEN user_rating IS NOT NULL THEN 1 ELSE 0 END) "
-        "FROM items %s" % where, params).fetchone()
+        "FROM items WHERE media IN ('movie', 'episode')").fetchone()
     return {
         "episodes": row[0] or 0,
         "shows": row[1] or 0,
@@ -111,17 +108,47 @@ def _tile_row(connection, since=None):
     }
 
 
-def _utc_offset():
+def _tile_row_since(connection, since, dates):
     """
     <summary>
-    Local clock minus UTC clock, as a timedelta.
+    The same counts for the titles last watched on or after a local stamp.
     </summary>
+    <param name="connection">An open mirror connection.</param>
+    <param name="since">A local YYYY-MM-DDTHH:MM:SS stamp.</param>
+    <param name="dates">A library.LastWatched built on this connection.</param>
     <remarks>
-    The same reading webdata takes, and for the same reason: Jellyfin dates
-    everything in UTC and every question here is about the local calendar.
+    Walked in Python rather than filtered in SQL because "last watched"
+    is the dashboard's rule (the play log first, Jellyfin's date only as
+    the fallback), not a column. Until this, the month tile compared the
+    mirror's UTC copy of Jellyfin's date, so a bulk re-mark on the server
+    put the whole library into one month on every skin that showed these
+    properties, while every page of the dashboard had moved on. The
+    whole mirror is read once per call, which the service does once every
+    few minutes; a library of ten thousand rows is a fraction of a second.
     </remarks>
     """
-    return datetime.now() - datetime.now(timezone.utc).replace(tzinfo=None)
+    rows = connection.execute(
+        "SELECT media, series_name, name, year, play_count, "
+        "runtime_minutes, user_rating, last_played FROM items "
+        "WHERE media IN ('movie', 'episode')")
+    out = {"episodes": 0, "shows": set(), "movies": 0, "plays": 0,
+           "minutes": 0, "ratings": 0}
+    for media, series, name, year, plays, runtime, score, played in rows:
+        when = dates.title(played, series if media == "episode" else None,
+                           name, year)
+        if not when or when < since:
+            continue
+        if media == "episode":
+            out["episodes"] += 1
+            out["shows"].add(series)
+        else:
+            out["movies"] += 1
+        out["plays"] += plays or 0
+        out["minutes"] += (runtime or 0) * max(plays or 0, 1)
+        if score is not None:
+            out["ratings"] += 1
+    out["shows"] = len(out["shows"])
+    return out
 
 
 def tiles(now=None):
@@ -129,19 +156,20 @@ def tiles(now=None):
     <summary>
     The two headline blocks: this month, and all time.
     </summary>
+    <remarks>
+    The month boundary is local midnight on the first, compared against
+    local last watched stamps: the rule in library.LastWatched hands back
+    local time whichever side (the log or Jellyfin's date) answered, so no
+    UTC arithmetic is needed here any more.
+    </remarks>
     """
     now = now or datetime.now()
-    # last_played holds Jellyfin's UTC timestamp, so the month boundary has
-    # to be the same instant written in UTC. Comparing a local date against
-    # it filed a film watched at 23:30 on the last night of the month under
-    # the next month for anybody east of UTC, and the previous one for
-    # anybody west.
-    local_start = now.replace(day=1, hour=0, minute=0, second=0,
-                              microsecond=0)
-    month_start = (local_start - _utc_offset()).strftime("%Y-%m-%dT%H:%M:%S")
+    month_start = now.replace(day=1, hour=0, minute=0, second=0,
+                              microsecond=0).strftime("%Y-%m-%dT%H:%M:%S")
     connection = _connect()
     try:
-        this_month = _tile_row(connection, month_start)
+        dates = library.LastWatched(connection)
+        this_month = _tile_row_since(connection, month_start, dates)
         all_time = _tile_row(connection)
     finally:
         connection.close()

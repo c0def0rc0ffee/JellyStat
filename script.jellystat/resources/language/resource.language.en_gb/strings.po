@@ -166,3 +166,7 @@ msgstr ""
 msgctxt "#32064"
 msgid "A 9 or 10 also marks the item a favourite on Jellyfin"
 msgstr ""
+
+msgctxt "#32065"
+msgid "Write last watched dates from the play log to Jellyfin"
+msgstr ""

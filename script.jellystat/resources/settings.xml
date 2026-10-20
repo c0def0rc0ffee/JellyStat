@@ -181,6 +181,11 @@
           <default>true</default>
           <control type="toggle"/>
         </setting>
+        <setting id="push_dates" type="boolean" label="32065">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
         <setting id="playlog_min_minutes" type="integer" label="32051">
           <level>0</level>
           <default>2</default>

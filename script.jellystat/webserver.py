@@ -37,6 +37,7 @@ import xbmcvfs
 
 import addon_api
 import backup
+import dates
 import history
 import importer
 import library
@@ -44,6 +45,7 @@ import lists
 import media as artwork
 import main as core
 import playback
+import playlog
 import ratings
 import reconcile
 import screentime
@@ -538,6 +540,8 @@ class Handler(BaseHTTPRequestHandler):
                 title=title, show=show)})
         elif route.path == "/api/library":
             self._serve_library(parse_qs(route.query))
+        elif route.path == "/api/playlog/bulk":
+            self._send_json(200, {"bulk_days": playlog.bulk_days()})
         elif route.path == "/api/stats":
             media = (parse_qs(route.query).get("media") or ["movies"])[0]
             self._send_json(200, library.movie_stats()
@@ -579,6 +583,11 @@ class Handler(BaseHTTPRequestHandler):
         elif route.path == "/api/reconcile":
             try:
                 self._send_json(200, reconcile.survey())
+            except Exception as err:
+                self._send_json(500, {"error": str(err)})
+        elif route.path == "/api/dates":
+            try:
+                self._send_json(200, dates.survey())
             except Exception as err:
                 self._send_json(500, {"error": str(err)})
         elif route.path == "/api/backups":
@@ -741,9 +750,22 @@ class Handler(BaseHTTPRequestHandler):
                 log("Reconcile failed to start: %s" % err, xbmc.LOGERROR)
                 self._send_json(500, {"error": str(err)})
             return
+        if path == "/api/dates/start":
+            # The button on the Tools page: a manual run, so dates the
+            # server refused earlier this session are tried once more.
+            try:
+                self._send_json(200, dates.start(manual=True))
+            except Exception as err:
+                log("Date write back failed to start: %s" % err,
+                    xbmc.LOGERROR)
+                self._send_json(500, {"error": str(err)})
+            return
         if path == "/api/backup/create":
             self._send_json(200, {"backup": backup.create("manual",
                                                           "requested")})
+            return
+        if path == "/api/playlog/set-aside":
+            self._serve_set_aside()
             return
         if path == "/api/import/stage":
             self._import_stage()
@@ -979,6 +1001,7 @@ class Handler(BaseHTTPRequestHandler):
                                            % err})
             return
         webdata.invalidate()
+        result["dates_pushed"] = dates.nudge()
         self._send_json(200, result)
 
     def _import_discard(self):
@@ -1605,6 +1628,34 @@ class Handler(BaseHTTPRequestHandler):
         report["read_files"] = got["read"]
         self._send_json(200, report)
 
+    def _serve_set_aside(self):
+        """
+        <summary>
+        Set aside, or restore, one day's Jellyfin detected play rows.
+        </summary>
+        <remarks>
+        Body: {"day": "YYYY-MM-DD", "restore": false}. Nothing is deleted
+        either way; see playlog.set_aside. The stats cache is dropped so
+        the next page load shows the change, and the reply carries the
+        fresh bulk day list so the panel can redraw without a second
+        request.
+        </remarks>
+        """
+        body = self._json_body()
+        try:
+            changed = playlog.set_aside(body.get("day"),
+                                        restore=bool(body.get("restore")))
+        except ValueError:
+            self._send_json(400, {"error": "The day must be YYYY-MM-DD."})
+            return
+        webdata.invalidate()
+        # The authority just changed for every title on that day, so
+        # Jellyfin is brought into line straight away rather than on the
+        # service's next beat.
+        dates.nudge()
+        self._send_json(200, {"changed": changed,
+                              "bulk_days": playlog.bulk_days()})
+
     def _serve_trakt_commit(self):
         """
         <summary>
@@ -1613,9 +1664,13 @@ class Handler(BaseHTTPRequestHandler):
         """
         body = self._json_body()
         try:
-            self._send_json(200, trakt_import.commit(
+            result = trakt_import.commit(
                 body.get("token"), body.get("categories"),
-                body.get("mode") or trakt_import.DEFAULT_MODE))
+                body.get("mode") or trakt_import.DEFAULT_MODE)
+            # The sittings just imported are now the authority for their
+            # titles' dates; Jellyfin follows without waiting for the beat.
+            result["dates_pushed"] = dates.nudge()
+            self._send_json(200, result)
         except trakt_import.TraktImportError as err:
             self._send_json(400, {"error": str(err)})
         except Exception as err:

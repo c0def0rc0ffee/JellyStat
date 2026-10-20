@@ -328,6 +328,26 @@ def test_failure_logging():
     check(kodi_stubs.logged("in boom"), "the traceback names the failing function")
 
 
+def test_playlog_endpoints():
+    """<summary>The bulk day listing answers, and set aside refuses a bad day and accepts a good one.</summary>"""
+    print("running test_playlog_endpoints")
+    kodi_stubs.SETTINGS["web_password"] = ""
+    status, _, data = call("GET", "/api/playlog/bulk")
+    equal(status, 200, "the bulk day listing answers")
+    equal(json.loads(data).get("bulk_days"), [], "an empty log has no bulk days")
+    same = {"Content-Type": "application/json"}
+    status, _, data = call("POST", "/api/playlog/set-aside", same,
+                           json.dumps({"day": "yesterday"}).encode())
+    equal(status, 400, "a day that is not a date is refused")
+    check(b"YYYY-MM-DD" in data, "the refusal says what a day looks like")
+    status, _, data = call("POST", "/api/playlog/set-aside", same,
+                           json.dumps({"day": "2025-12-15"}).encode())
+    equal(status, 200, "a real day is accepted")
+    payload = json.loads(data)
+    equal(payload.get("changed"), 0, "nothing to set aside in an empty log")
+    equal(payload.get("bulk_days"), [], "the reply carries the fresh listing")
+
+
 def test_password_change_restarts():
     """<summary>The service restarts the dashboard when the password changes, not only on port or binding changes.</summary>"""
     print("running test_password_change_restarts")
@@ -376,6 +396,7 @@ def main():
         test_proxy_through_handler(fake.server_address[1])
         test_bad_lengths(fake.server_address[1])
         test_failure_logging()
+        test_playlog_endpoints()
         test_password_change_restarts()
     finally:
         server.shutdown()

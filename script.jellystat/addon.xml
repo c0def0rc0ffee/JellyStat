@@ -7,7 +7,7 @@
   licence and icon.
   </summary>
 -->
-<addon id="script.jellystat" name="JellyStat" version="0.28.3" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.28.5" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -26,7 +26,13 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.28.2
+    <news lang="en_GB">v0.28.5
+Jellyfin now follows JellyStat's last watched dates. Every title whose logged date differs from Jellyfin's has its last played date written across in the background, after an import or a day being set aside and on the service's regular check, so Jellyfin for Kodi and your skin show the same date as the dashboard. Only the date is written. A toggle under History turns it off, and the Tools page shows what differs and what the server kept.
+
+v0.28.4
+The play log is now the authority for every title's last watched date, with Jellyfin's date used only when no sitting is logged. A day on which Jellyfin stamped many titles at once, such as a bulk re-mark, is listed on the Tools page and can be set aside and restored without deleting anything. Importing Trakt history therefore corrects the dates of every title it matches.
+
+v0.28.2
 The Add-ons page, Settings and the other pages now open even when the stats cannot be loaded, such as on a box with no Jellyfin login. The error stays on the Overview, where it belongs.
 
 v0.28.1

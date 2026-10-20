@@ -23,7 +23,14 @@ Two things fall out of owning the copy:
    from the mirror instead of failing: see as_jellyfin_items(), which
    returns rows in the same shape the server would have sent.
 
-3. Ratings arriving from elsewhere. Jellyfin's per-user `UserData.Rating`
+3. The last watched date. The mirror keeps Jellyfin's LastPlayedDate as
+   it arrived, but the dashboard does not show it directly: LastWatched
+   below answers from the play log first and only falls back to the
+   server's date for a title with no completed sitting. A bulk re-mark on
+   the server then changes nothing on screen once its rows are set aside,
+   and an import that writes sittings corrects the dates it covers.
+
+4. Ratings arriving from elsewhere. Jellyfin's per-user `UserData.Rating`
    is the field JellyRate writes when it asks for a score as the credits
    roll, and the same field JellyStat's own rating page writes. Reading it
    back on every sync means a score given anywhere, JellyRate, another
@@ -547,6 +554,132 @@ def status():
 
 
 # ---------------------------------------------------------------------------
+# Last watched: the play log first, Jellyfin's date as the fallback
+# ---------------------------------------------------------------------------
+
+def local_stamp(utc_text):
+    """
+    <summary>
+    A Jellyfin LastPlayedDate (UTC) as the local wall time the play log uses.
+    </summary>
+    <param name="utc_text">The mirror's last_played text, or None.</param>
+    <returns>A YYYY-MM-DDTHH:MM:SS local stamp, or None.</returns>
+    <remarks>
+    The mirror keeps Jellyfin's UTC value untouched; the log keeps local
+    time. A date shown next to a log date has to be in the log's terms or
+    the two sort against each other by up to a day. Converted through
+    playlog.to_local, which uses the date's own offset, not today's.
+    </remarks>
+    """
+    import main as core
+    played = core.parse_played_date(utc_text)
+    if not played:
+        return None
+    return playlog.to_local(played).strftime(playlog.STAMP)
+
+
+class LastWatched(object):
+    """
+    <summary>
+    The rule for a title's last watched date, built once per request from
+    the live, completed rows of the play log.
+    </summary>
+    <remarks>
+    The log is the authority: the newest completed sitting that has not
+    been set aside wins, and only a title with no such sitting shows
+    Jellyfin's date. The dashboard's per title date used to be a straight
+    copy of UserData.LastPlayedDate, which a server side bulk re-mark
+    moves to one day for hundreds of titles and no import can put back.
+    A Trakt import writes sittings, so under this rule it corrects the
+    dates; under the old one it could not.
+
+    Built as one grouped read rather than one query per title: the library
+    page asks for thousands of rows at a time, and a Pi does not want a
+    thousand indexed lookups per page.
+
+    Films are matched on title, and on year where both sides have one,
+    for the same reason _sittings does: Dune 1984 and Dune 2021 are not
+    the same viewing history. Episodes are matched on show and title.
+    Shows take the newest sitting of any of their episodes.
+    </remarks>
+    """
+
+    def __init__(self, connection=None):
+        """
+        <summary>
+        Read the grouped log once.
+        </summary>
+        <param name="connection">An open mirror connection to reuse, or
+        None to open and close one here.</param>
+        """
+        own = connection is None
+        if own:
+            playlog.connect().close()
+            connection = connect()
+        try:
+            rows = connection.execute(
+                "SELECT ULOWER(COALESCE(show, '')), ULOWER(title), year, "
+                "MAX(started_at) FROM plays WHERE completed = 1 AND "
+                + playlog.LIVE + " GROUP BY 1, 2, 3").fetchall()
+        finally:
+            if own:
+                connection.close()
+        self._titles = {}
+        self._shows = {}
+        for show, title, year, started in rows:
+            self._titles.setdefault((show, title), []).append((year, started))
+            if show and (show not in self._shows
+                         or started > self._shows[show]):
+                self._shows[show] = started
+
+    def logged(self, show, title, year=None):
+        """
+        <summary>
+        The newest completed sitting of one title from the log, or None.
+        </summary>
+        <param name="show">The show, or None for a film.</param>
+        <param name="title">The film or episode title.</param>
+        <param name="year">The film's year; ignored for episodes.</param>
+        <returns>A local YYYY-MM-DDTHH:MM:SS stamp, or None.</returns>
+        """
+        key = playlog.dedup_key(show, title)
+        best = None
+        for row_year, started in self._titles.get(key, ()):
+            if not show and year and row_year and int(row_year) != int(year):
+                continue
+            if best is None or started > best:
+                best = started
+        return best
+
+    def title(self, jellyfin, show, title, year=None):
+        """
+        <summary>
+        A title's last watched date under the rule.
+        </summary>
+        <param name="jellyfin">The mirror's last_played (UTC) for the fallback.</param>
+        <param name="show">The show, or None for a film.</param>
+        <param name="title">The film or episode title.</param>
+        <param name="year">The film's year, for remakes.</param>
+        <returns>A local stamp from the log, else Jellyfin's date made
+        local, else None.</returns>
+        """
+        return self.logged(show, title, year) or local_stamp(jellyfin)
+
+    def show(self, jellyfin, show):
+        """
+        <summary>
+        A show's last watched date: its newest logged episode, else the
+        newest Jellyfin date among its episodes.
+        </summary>
+        <param name="jellyfin">MAX(last_played) over the show's episodes.</param>
+        <param name="show">The show's name.</param>
+        <returns>A local stamp or None.</returns>
+        """
+        key = (show or "").strip().lower()
+        return self._shows.get(key) or local_stamp(jellyfin)
+
+
+# ---------------------------------------------------------------------------
 # Search and item pages
 # ---------------------------------------------------------------------------
 
@@ -613,15 +746,19 @@ def search(term, limit=25):
         return {"movies": [], "shows": []}
     pattern = _like(term)
     connection = connect()
+    playlog.connect().close()
+    watched = LastWatched(connection)
     movies = [{
         "id": row[0], "name": row[1], "year": row[2], "rating": row[3],
-        "last_played": row[4], "play_count": row[5], "seen": True,
+        "last_played": watched.title(row[4], None, row[1], row[2]),
+        "play_count": row[5], "seen": True,
     } for row in connection.execute(
         "SELECT id, name, year, rating, last_played, play_count FROM items "
         "WHERE media = 'movie' AND ULOWER(name) LIKE ? ESCAPE '\\'",
         (pattern,))]
     shows = [{
-        "name": row[0], "episodes": row[1], "last_played": row[2],
+        "name": row[0], "episodes": row[1],
+        "last_played": watched.show(row[2], row[0]),
         "seen": True,
     } for row in connection.execute(
         "SELECT series_name, COUNT(*), MAX(last_played) FROM items "
@@ -676,13 +813,17 @@ def _sittings(connection, show, title=None, year=None):
     else:
         where = "ULOWER(COALESCE(show, '')) = ?"
         params = [(show or "").strip().lower()]
+    # Set aside rows are listed, flagged, rather than hidden: the item page
+    # is where somebody checks what the log holds, and a row that exists
+    # but counts for nothing should say so there rather than vanish.
     return [{
         "started_at": row[0], "ended_at": row[1], "title": row[2],
         "season": row[3], "episode": row[4], "watched_seconds": row[5],
         "completed": bool(row[6]), "source": row[7], "device": row[8],
+        "set_aside": bool(row[9]),
     } for row in connection.execute(
         "SELECT started_at, ended_at, title, season, episode, "
-        "watched_seconds, completed, source, device FROM plays "
+        "watched_seconds, completed, source, device, set_aside FROM plays "
         "WHERE %s ORDER BY started_at DESC LIMIT 200" % where, params)]
 
 
@@ -702,11 +843,14 @@ def dupe_key(name, year):
     return "%s|%s" % (flat, year or "")
 
 
-def duplicates_of(connection, item_id, name, year, media="movie"):
+def duplicates_of(connection, item_id, name, year, media="movie",
+                  dates=None):
     """
     <summary>
     Other entries in the library that are the same title as this one.
     </summary>
+    <param name="dates">A LastWatched already built on this connection, or
+    None to build one here.</param>
     <remarks>
     Jellyfin is happy to hold a film twice: two rips, two folders, a
     re-import, and nothing in the interface says so. It matters here
@@ -716,13 +860,16 @@ def duplicates_of(connection, item_id, name, year, media="movie"):
     """
     key = dupe_key(name, year)
     out = []
+    watched = dates or LastWatched(connection)
     for row in connection.execute(
             "SELECT id, name, year, play_count, last_played, user_rating "
             "FROM items WHERE media = ? AND id != ?", (media, item_id)):
         if dupe_key(row[1], row[2]) != key:
             continue
         out.append({"id": row[0], "name": row[1], "year": row[2],
-                    "play_count": row[3], "last_played": row[4],
+                    "play_count": row[3],
+                    "last_played": watched.title(row[4], None, row[1],
+                                                 row[2]),
                     "user_rating": row[5]})
     return out
 
@@ -758,12 +905,15 @@ def browse_rows(media):
     </remarks>
     """
     connection = connect()
+    playlog.connect().close()
+    dates = LastWatched(connection)
     if media == "movies":
         rows = [{
             "id": r[0], "name": r[1], "year": r[2],
             "genres": json.loads(r[3] or "[]"), "rating": r[4],
             "user_rating": r[5], "play_count": r[6] or 0,
-            "last_played": r[7], "favourite": bool(r[8]),
+            "last_played": dates.title(r[7], None, r[1], r[2]),
+            "favourite": bool(r[8]),
             "runtime_minutes": r[9], "seen": bool(r[6]), "episodes": None,
         } for r in connection.execute(
             "SELECT id, name, year, genres, rating, user_rating, play_count, "
@@ -787,7 +937,8 @@ def browse_rows(media):
             "id": r[0], "name": r[1], "year": r[2],
             "genres": json.loads(r[3] or "[]"), "rating": r[4],
             "user_rating": r[5], "play_count": episodes,
-            "last_played": last, "favourite": bool(r[6]),
+            "last_played": dates.show(last, r[1]) if episodes else None,
+            "favourite": bool(r[6]),
             "runtime_minutes": None, "seen": episodes > 0,
             "episodes": episodes,
         })
@@ -809,16 +960,24 @@ def movie_detail(item_id):
     if row is None:
         connection.close()
         return None
+    playlog.connect().close()
+    dates = LastWatched(connection)
     detail = {
         "id": row[0], "name": row[1], "year": row[2],
         "genres": json.loads(row[3] or "[]"),
         "rating": row[4], "critic": row[5], "favourite": bool(row[6]),
-        "play_count": row[7], "last_played": row[8], "first_seen": row[9],
+        "play_count": row[7],
+        "last_played": dates.title(row[8], None, row[1], row[2]),
+        # Jellyfin's own date, kept separate so the page can say when the
+        # two disagree. Local time, like everything else the page shows.
+        "jellyfin_last_played": local_stamp(row[8]),
+        "first_seen": row[9],
         "present": bool(row[10]),
         "sittings": _sittings(connection, None, title=row[1],
                               year=row[2]),
     }
-    detail["duplicates"] = duplicates_of(connection, row[0], row[1], row[2])
+    detail["duplicates"] = duplicates_of(connection, row[0], row[1], row[2],
+                                         dates=dates)
     connection.close()
     return detail
 
@@ -839,16 +998,23 @@ def show_detail(name):
     if not rows:
         connection.close()
         return None
+    playlog.connect().close()
+    dates = LastWatched(connection)
     episodes = [{
         "name": row[0], "season": row[1], "episode": row[2],
-        "rating": row[3], "play_count": row[4], "last_played": row[5],
+        "rating": row[3], "play_count": row[4],
+        "last_played": dates.title(row[5], name, row[0]),
         "present": bool(row[7]), "id": row[9],
     } for row in rows]
+    # The query's order was Jellyfin's; the rule can move an episode, so
+    # the list is ordered again by the dates the page will show.
+    episodes.sort(key=lambda e: e["last_played"] or "", reverse=True)
     seasons = {}
     for episode in episodes:
         season = episode["season"] if episode["season"] is not None else 0
         seasons[season] = seasons.get(season, 0) + 1
     ratings = [e["rating"] for e in episodes if e["rating"]]
+    jellyfin_newest = max((row[5] or "") for row in rows) or None
     detail = {
         "name": name,
         # The series id lets the page ask Jellyfin for artwork, cast and the
@@ -857,7 +1023,8 @@ def show_detail(name):
         "genres": json.loads(rows[0][6] or "[]"),
         "episodes_watched": len(episodes),
         "plays": sum(e["play_count"] for e in episodes),
-        "last_played": episodes[0]["last_played"],
+        "last_played": dates.show(jellyfin_newest, name),
+        "jellyfin_last_played": local_stamp(jellyfin_newest),
         "avg_rating": (sum(ratings) / len(ratings)) if ratings else None,
         "seasons": [{"season": season, "episodes": count}
                     for season, count in sorted(seasons.items())],
@@ -940,6 +1107,8 @@ def tv_stats(limit=15):
     </summary>
     """
     connection = connect()
+    playlog.connect().close()
+    dates = LastWatched(connection)
     totals = connection.execute(
         "SELECT COUNT(*), SUM(play_count), AVG(rating), "
         "COUNT(DISTINCT series_name) FROM items "
@@ -947,7 +1116,7 @@ def tv_stats(limit=15):
     shows = [{
         "name": row[0], "episodes": row[1], "plays": row[2],
         "avg_rating": round(row[3], 2) if row[3] else None,
-        "last_played": row[4], "seasons": row[5],
+        "last_played": dates.show(row[4], row[0]), "seasons": row[5],
     } for row in connection.execute(
         "SELECT series_name, COUNT(*), SUM(play_count), AVG(rating), "
         "MAX(last_played), COUNT(DISTINCT season) FROM items "

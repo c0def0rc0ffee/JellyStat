@@ -90,11 +90,14 @@ def _local_played(item, offset):
 # ---------------------------------------------------------------------------
 
 def _calendar(movies, episodes, offset, days=CALENDAR_DAYS,
-              sessions=None, coverage_start=None):
+              sessions=None, coverage_start=None, set_aside=None):
     """
     <summary>
     Per-day counts for the last N days, oldest first (heatmap + bars).
     </summary>
+    <param name="set_aside">(dedup key, day) pairs of log rows set aside,
+    from playlog.set_aside_keys(); an item whose Jellyfin date matches one
+    is skipped in the fallback, whichever era it falls in.</param>
     <remarks>
     Every day in the range is present, including the empty ones, a gap in
     the data and a day off must look different in the chart.
@@ -111,6 +114,7 @@ def _calendar(movies, episodes, offset, days=CALENDAR_DAYS,
     covered = None
     if coverage_start:
         covered = timeparse.strptime(coverage_start, "%Y-%m-%d").date()
+    set_aside = set_aside or set()
     tally = {}
 
     def bump(day, kind):
@@ -137,11 +141,15 @@ def _calendar(movies, episodes, offset, days=CALENDAR_DAYS,
             played = _local_played(item, offset)
             if not played or not (start <= played.date() <= today):
                 continue
+            key = (playlog.dedup_key(item.get("SeriesName"),
+                                     item.get("Name")),
+                   played.strftime("%Y-%m-%d"))
+            # A date set aside as a bulk re-mark is not a viewing, in
+            # either era.
+            if key in set_aside:
+                continue
             if covered and played.date() >= covered:
                 # The log's era: only count it if the log missed it.
-                key = (playlog.dedup_key(item.get("SeriesName"),
-                                         item.get("Name")),
-                       played.strftime("%Y-%m-%d"))
                 if key in session_keys:
                     continue
             bump(played.date(), kind)
@@ -157,11 +165,13 @@ def _calendar(movies, episodes, offset, days=CALENDAR_DAYS,
 
 
 def _clock_and_week(movies, episodes, offset, sessions=None,
-                    coverage_start=None):
+                    coverage_start=None, set_aside=None):
     """
     <summary>
     When watching happens: 24 hour buckets and 7 weekday buckets.
     </summary>
+    <param name="set_aside">(dedup key, day) pairs of log rows set aside;
+    the matching Jellyfin dates are skipped, as in _calendar.</param>
     <remarks>
     Blended the same way as _calendar, so the two eras never fight: play-log
     sessions count as real sittings, and Jellyfin last-played dates fill in
@@ -181,6 +191,7 @@ def _clock_and_week(movies, episodes, offset, sessions=None,
     covered = None
     if coverage_start:
         covered = timeparse.strptime(coverage_start, "%Y-%m-%d").date()
+    set_aside = set_aside or set()
     session_keys = set()
     for event in sessions or []:
         kind = event["kind"]
@@ -196,10 +207,12 @@ def _clock_and_week(movies, episodes, offset, sessions=None,
             played = _local_played(item, offset)
             if not played:
                 continue
+            key = (playlog.dedup_key(item.get("SeriesName"),
+                                     item.get("Name")),
+                   played.strftime("%Y-%m-%d"))
+            if key in set_aside:
+                continue
             if covered and played.date() >= covered:
-                key = (playlog.dedup_key(item.get("SeriesName"),
-                                         item.get("Name")),
-                       played.strftime("%Y-%m-%d"))
                 if key in session_keys:
                     continue
             hours[played.hour][kind] += 1
@@ -234,11 +247,15 @@ def _streaks(calendar):
     return {"current": current, "longest": longest}
 
 
-def _top_shows(episodes, series_genres, offset, limit=TOP_SHOWS):
+def _top_shows(episodes, series_genres, offset, limit=TOP_SHOWS,
+               dates=None):
     """
     <summary>
     Shows ranked by distinct episodes watched, with their last watch.
     </summary>
+    <param name="dates">A library.LastWatched; when given, each show's
+    last watch follows the rule (the log's newest episode sitting first,
+    Jellyfin's newest date only as the fallback).</param>
     """
     shows = {}
     for episode in episodes:
@@ -257,6 +274,11 @@ def _top_shows(episodes, series_genres, offset, limit=TOP_SHOWS):
             stamp = played.strftime("%Y-%m-%d")
             if not entry["last_played"] or stamp > entry["last_played"]:
                 entry["last_played"] = stamp
+    if dates is not None:
+        for entry in shows.values():
+            logged = dates.show(None, entry["show"])
+            if logged:
+                entry["last_played"] = logged[:10]
     ordered = sorted(shows.values(),
                      key=lambda show: (-show["episodes"], show["show"]))
     return ordered[:limit]
@@ -284,7 +306,7 @@ def _rating_spread(movies):
     return {"buckets": buckets, "unrated": unrated}
 
 
-def _item_row(item, offset, series_genres=None):
+def _item_row(item, offset, series_genres=None, dates=None):
     """
     <summary>
     One recent item as the dashboard shows it: an episode when series_genres is given, else a film.
@@ -292,14 +314,27 @@ def _item_row(item, offset, series_genres=None):
     <param name="item">A Jellyfin item.</param>
     <param name="offset">Local minus UTC as a timedelta.</param>
     <param name="series_genres">Series id to genres, or None for a film.</param>
+    <param name="dates">A library.LastWatched, or None to show Jellyfin's
+    date alone.</param>
     <returns>A dict.</returns>
+    <remarks>
+    `played` follows the last watched rule when `dates` is given: the
+    log's newest completed sitting, else Jellyfin's date made local. Both
+    are local wall time, so the recent list sorts them as one.
+    </remarks>
     """
     played = _local_played(item, offset)
+    stamp = played.strftime("%Y-%m-%d %H:%M") if played else None
+    if dates is not None:
+        logged = dates.logged(item.get("SeriesName"), item.get("Name"),
+                              item.get("ProductionYear"))
+        if logged:
+            stamp = logged[:16].replace("T", " ")
     user_data = item.get("UserData") or {}
     row = {
         "name": item.get("Name") or "?",
         "type": "episode" if series_genres is not None else "movie",
-        "played": played.strftime("%Y-%m-%d %H:%M") if played else None,
+        "played": stamp,
         "genres": core.effective_genres(item, series_genres),
         "rating": item.get("CommunityRating"),
         "critic": item.get("CriticRating"),
@@ -315,14 +350,16 @@ def _item_row(item, offset, series_genres=None):
     return row
 
 
-def _recent(movies, episodes, series_genres, offset, limit=RECENT_ITEMS):
+def _recent(movies, episodes, series_genres, offset, limit=RECENT_ITEMS,
+            dates=None):
     """
     <summary>
     The last N things watched, films and episodes interleaved by date.
     </summary>
+    <param name="dates">A library.LastWatched for the rule, or None.</param>
     """
-    rows = [_item_row(movie, offset) for movie in movies]
-    rows += [_item_row(episode, offset, series_genres)
+    rows = [_item_row(movie, offset, dates=dates) for movie in movies]
+    rows += [_item_row(episode, offset, series_genres, dates=dates)
              for episode in episodes]
     rows = [row for row in rows if row["played"]]
     rows.sort(key=lambda row: row["played"], reverse=True)
@@ -373,12 +410,19 @@ def build(recent_days=30):
 
     sessions = playlog.events()
     coverage_start = playlog.since()
+    set_aside = playlog.set_aside_keys()
+    # One grouped read of the log serves every per title date below, so
+    # the recent list, the favourites and the top shows cannot disagree
+    # with the library page about when something was last watched.
+    dates = library.LastWatched()
     calendar = _calendar(movies, episodes, offset,
-                         sessions=sessions, coverage_start=coverage_start)
+                         sessions=sessions, coverage_start=coverage_start,
+                         set_aside=set_aside)
     hours, weekdays = _clock_and_week(movies, episodes, offset,
                                       sessions=sessions,
-                                      coverage_start=coverage_start)
-    favourites = [_item_row(movie, offset) for movie in movies
+                                      coverage_start=coverage_start,
+                                      set_aside=set_aside)
+    favourites = [_item_row(movie, offset, dates=dates) for movie in movies
                   if (movie.get("UserData") or {}).get("IsFavorite")]
 
     return {
@@ -405,9 +449,11 @@ def build(recent_days=30):
         "hours": hours,
         "weekdays": weekdays,
         "streaks": _streaks(calendar),
-        "top_shows": _top_shows(episodes, series_genres, offset),
+        "top_shows": _top_shows(episodes, series_genres, offset,
+                                dates=dates),
         "ratings": _rating_spread(movies),
-        "recent": _recent(movies, episodes, series_genres, offset),
+        "recent": _recent(movies, episodes, series_genres, offset,
+                          dates=dates),
         "favourites": favourites[:12],
         "playlog": {
             "since": coverage_start,
