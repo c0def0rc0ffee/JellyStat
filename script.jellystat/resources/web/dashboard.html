@@ -722,6 +722,22 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .entryrow .drop { border: 0; background: transparent; color: var(--ink-dim);
   cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
 .entryrow .drop:hover { color: var(--warn); }
+/* ADDON-INLINE: the fields an add-on lets the list edit on the line
+   (spec 5.1, inline), and the sort picker above the list. */
+.entryrow .inl { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin-top: 6px; }
+.entryrow .inl input[type="time"] { font-size: 12.5px; padding: 2px 6px; }
+.entryrow .inl .days { display: flex; flex-wrap: wrap; gap: 4px; }
+.entryrow .inl .days button {
+  border: 1px solid var(--line); background: transparent; color: var(--ink-dim);
+  border-radius: 999px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.entryrow .inl .days button:hover { color: var(--ink); border-color: var(--accent); }
+.entryrow .inl .days button[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: #fff; }
+.entryrow .inl .saved { font-size: 12px; color: var(--ink-dim); }
+.entryrow .inl .saved.bad { color: var(--warn); }
+.sortbar { display: flex; gap: 8px; align-items: center; margin: 0 0 10px;
+  font-size: 13px; color: var(--ink-dim); }
 /* Add-to-list, on item pages and on each episode card */
 .listadd select { font-size: 13px; padding: 6px 9px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--panel-2); color: inherit;
@@ -1372,6 +1388,10 @@ try {
   if (REC_MODES[saved.recMovies]) PREFS.recMovies = saved.recMovies;
   if (REC_MODES[saved.recTv]) PREFS.recTv = saved.recTv;
   if (NP_POSITIONS[saved.npPosition]) PREFS.npPosition = saved.npPosition;
+  /* The sort chosen on each add-on resource page, by "addon/resource". */
+  if (saved.addonSorts && typeof saved.addonSorts === "object") {
+    PREFS.addonSorts = saved.addonSorts;
+  }
 } catch (err) { /* corrupted storage: defaults are fine */ }
 
 /* The seen/new choice for one medium, as the query flag the API wants. */
@@ -5130,57 +5150,316 @@ async function openResource(addon, resource, note) {
   }
 
   const panel = el("section", { class: "panel" });
-  if (!items.length) {
-    panel.append(el("p", { class: "empty" }, "None yet."));
+  const sorts = Array.isArray(resource.sorts) ? resource.sorts : [];
+  if (sorts.length && items.length > 1) {
+    host.append(addonSortBar(addon, resource, sorts, () => drawRows()));
   }
-  const titleKey = resource.title_field;
-  const extras = schema.fields.filter((f) => f.type === "readonly" && f.key !== titleKey);
-  items.forEach((record) => {
-    const row = el("div", { class: "entryrow" });
-    const title = el("div", { class: "t" });
-    const name = el("button", { class: "nm", type: "button" },
-                    String(record[titleKey] !== undefined ? record[titleKey] : record.id));
-    name.addEventListener("click", () => openRecord(state, record));
-    title.append(name);
-    const sub = extras.map((f) => record[f.key]).filter((v) => v !== undefined && v !== "");
-    if (sub.length) title.append(el("div", { class: "sub" }, sub.join(" \u00b7 ")));
-    row.append(title);
-    /* "enabled" is the one field name the page reads by convention (spec
-       7.2): a record switched off says so in the list. */
-    if (record.enabled === false) row.append(el("span", { class: "tag" }, "Off"));
-    if (resource.delete === false) {
-      panel.append(row);
+  /**
+   * <summary>
+   * Draw every record in the chosen order, replacing what was there.
+   * </summary>
+   */
+  const drawRows = () => {
+    panel.textContent = "";
+    if (!items.length) {
+      panel.append(el("p", { class: "empty" }, "None yet."));
       return;
     }
-    const kill = el("button", { class: "drop", type: "button",
-                                title: "Delete" }, "\u00d7");
-    kill.addEventListener("click", async () => {
-      if (!window.confirm("Delete \u201c" + name.textContent + "\u201d from "
-          + addon.name + "? This cannot be undone.")) return;
-      kill.disabled = true;
-      try {
-        /* With record scoped ETags (spec 6) the list carries none, so the
-           record's own is read first. */
-        let etag = state.etag;
-        if (resource.etag === "record") {
-          etag = (await addonCall(addon.id, "/" + resource.name + "/" + record.id)).etag;
-        }
-        await addonCall(addon.id, "/" + resource.name + "/" + record.id,
-                        "DELETE", undefined, etag);
-        openResource(addon, resource, "Deleted \u201c" + name.textContent + "\u201d.");
-      } catch (err) {
-        kill.disabled = false;
-        say.className = "hint warnline";
-        say.textContent = err.status === 412
-          ? err.message + " The list below has been reloaded."
-          : "Could not delete it: " + err.message;
-        if (err.status === 412) openResource(addon, resource, say.textContent);
-      }
-    });
-    row.append(kill);
-    panel.append(row);
-  });
+    const chosen = addonSortChosen(addon, resource, sorts);
+    const ordered = chosen ? addonSorted(items, chosen.by || []) : items;
+    ordered.forEach((record) => panel.append(addonRow(state, record, say)));
+  };
+  drawRows();
   host.append(panel);
+}
+
+/**
+ * <summary>
+ * The sort the viewer last chose on a resource page, or the add-on's first.
+ * </summary>
+ * <param name="addon">The add-on.</param>
+ * <param name="resource">The resource entry from its /info.</param>
+ * <param name="sorts">Its declared sorts.</param>
+ * <returns>A sort entry, or null for the order the add-on sent.</returns>
+ */
+function addonSortChosen(addon, resource, sorts) {
+  const saved = (PREFS.addonSorts || {})[addon.id + "/" + resource.name];
+  if (saved === "") return null;
+  return sorts.find((entry) => entry.key === saved) || sorts[0] || null;
+}
+
+/**
+ * <summary>
+ * The "Sort by" picker above a resource's list.
+ * </summary>
+ * <param name="addon">The add-on.</param>
+ * <param name="resource">The resource entry from its /info.</param>
+ * <param name="sorts">Its declared sorts, each {key, label, by}.</param>
+ * <param name="redraw">Called after the choice changes.</param>
+ * <returns>A div.</returns>
+ * <remarks>
+ * The choice is kept in this browser's preferences, per add-on and resource,
+ * so the page opens in the order it was last left. "As the add-on lists them"
+ * is always offered as well.
+ * </remarks>
+ */
+function addonSortBar(addon, resource, sorts, redraw) {
+  const bar = el("div", { class: "sortbar" });
+  const select = el("select", { "aria-label": "Sort by" });
+  const current = addonSortChosen(addon, resource, sorts);
+  sorts.forEach((entry) => {
+    const opt = el("option", { value: entry.key }, entry.label || entry.key);
+    if (current && current.key === entry.key) opt.selected = true;
+    select.append(opt);
+  });
+  const plain = el("option", { value: "" }, "As " + addon.name + " lists them");
+  if (!current) plain.selected = true;
+  select.append(plain);
+  select.addEventListener("change", () => {
+    PREFS.addonSorts = PREFS.addonSorts || {};
+    PREFS.addonSorts[addon.id + "/" + resource.name] = select.value;
+    savePrefs();
+    redraw();
+  });
+  bar.append(el("span", {}, "Sort by"), select);
+  return bar;
+}
+
+/**
+ * <summary>
+ * Records in a declared order, without changing the array given.
+ * </summary>
+ * <param name="items">The records.</param>
+ * <param name="by">The sort's parts, each {field, order?, desc?}, compared in
+ * turn until one differs.</param>
+ * <returns>A new array.</returns>
+ * <remarks>
+ * Spec 5.1, sorts. A missing or empty value goes after every present one
+ * whichever the direction. With an order list a value sorts by its place in
+ * it, and a value not in the list after those that are. Otherwise numbers
+ * compare as numbers and anything else as text, case and accents ignored
+ * and digits read as numbers. Records that tie on every part keep the order
+ * the add-on sent them in.
+ * </remarks>
+ */
+function addonSorted(items, by) {
+  const empty = (v) => v === undefined || v === null || v === "";
+  const compare = (a, b) => {
+    for (const part of by) {
+      const va = a[part.field];
+      const vb = b[part.field];
+      if (empty(va) || empty(vb)) {
+        if (empty(va) && empty(vb)) continue;
+        return empty(va) ? 1 : -1;
+      }
+      let diff;
+      if (Array.isArray(part.order)) {
+        const rank = (v) => {
+          const at = part.order.findIndex((o) => sameValue(o, v));
+          return at < 0 ? part.order.length : at;
+        };
+        diff = rank(va) - rank(vb);
+      } else if (typeof va === "number" && typeof vb === "number") {
+        diff = va - vb;
+      } else {
+        diff = String(va).localeCompare(String(vb), undefined,
+                                        { numeric: true, sensitivity: "base" });
+      }
+      if (diff) return part.desc ? -diff : diff;
+    }
+    return 0;
+  };
+  /* Index as the last tie break: Array.prototype.sort is only required to
+     be stable from ES2019, and the televisions' WebKit is older. */
+  return items.map((record, i) => ({ record, i }))
+    .sort((x, y) => compare(x.record, y.record) || x.i - y.i)
+    .map((pair) => pair.record);
+}
+
+/**
+ * <summary>
+ * One record's line on a resource page: its title (which opens the form), the
+ * read only lines under it, any fields the add-on lets the line edit, its Off
+ * tag and its delete control.
+ * </summary>
+ * <param name="state">The resource page state; its etag moves on with every save.</param>
+ * <param name="record">The record, updated in place when a line edit saves.</param>
+ * <param name="say">The page's message line, for a failed delete.</param>
+ * <returns>The row.</returns>
+ */
+function addonRow(state, record, say) {
+  const addon = state.addon;
+  const resource = state.resource;
+  const schema = state.schema;
+  const titleKey = resource.title_field;
+  const extras = schema.fields.filter((f) => f.type === "readonly" && f.key !== titleKey);
+  const row = el("div", { class: "entryrow" });
+  const title = el("div", { class: "t" });
+  const name = el("button", { class: "nm", type: "button" },
+                  String(record[titleKey] !== undefined ? record[titleKey] : record.id));
+  name.addEventListener("click", () => openRecord(state, record));
+  title.append(name);
+  const subline = el("div", { class: "sub" });
+  /**
+   * <summary>Fill the read only line from the record as it now stands.</summary>
+   */
+  const fillSub = () => {
+    const sub = extras.map((f) => record[f.key]).filter((v) => v !== undefined && v !== "");
+    subline.textContent = sub.join(" \u00b7 ");
+    subline.hidden = !sub.length;
+  };
+  fillSub();
+  title.append(subline);
+  const inline = addonInline(state, record, () => {
+    name.textContent = String(record[titleKey] !== undefined ? record[titleKey] : record.id);
+    fillSub();
+  });
+  if (inline) title.append(inline);
+  row.append(title);
+  /* "enabled" is the one field name the page reads by convention (spec
+     7.2): a record switched off says so in the list. */
+  if (record.enabled === false) row.append(el("span", { class: "tag" }, "Off"));
+  if (resource.delete === false) return row;
+  const kill = el("button", { class: "drop", type: "button",
+                              title: "Delete" }, "\u00d7");
+  kill.addEventListener("click", async () => {
+    if (!window.confirm("Delete \u201c" + name.textContent + "\u201d from "
+        + addon.name + "? This cannot be undone.")) return;
+    kill.disabled = true;
+    try {
+      /* With record scoped ETags (spec 6) the list carries none, so the
+         record's own is read first. */
+      let etag = state.etag;
+      if (resource.etag === "record") {
+        etag = (await addonCall(addon.id, "/" + resource.name + "/" + record.id)).etag;
+      }
+      await addonCall(addon.id, "/" + resource.name + "/" + record.id,
+                      "DELETE", undefined, etag);
+      openResource(addon, resource, "Deleted \u201c" + name.textContent + "\u201d.");
+    } catch (err) {
+      kill.disabled = false;
+      say.className = "hint warnline";
+      say.textContent = err.status === 412
+        ? err.message + " The list below has been reloaded."
+        : "Could not delete it: " + err.message;
+      if (err.status === 412) openResource(addon, resource, say.textContent);
+    }
+  });
+  row.append(kill);
+  return row;
+}
+
+/**
+ * <summary>
+ * The controls for the fields a resource lets its list edit on the line, each
+ * saving as soon as it changes.
+ * </summary>
+ * <param name="state">The resource page state.</param>
+ * <param name="record">The record; updated in place from what the add-on stored.</param>
+ * <param name="redrawn">Called after a save, to refresh the row's other text.</param>
+ * <returns>A div, or null when the record carries none of those fields.</returns>
+ * <remarks>
+ * Spec 5.1, inline. A field is offered only when the record carries it, since
+ * an add-on sends only the fields that apply (spec 7.2): a monthly slot has no
+ * days to tick. A time is a time box; a multichoice with static options is a
+ * row of toggles, each showing the first three letters of its label; any
+ * other type gets the form's own control. Each change sends only that field,
+ * which the add-on merges (spec 5). The row is updated in place and not
+ * re-sorted, so it does not jump away while being edited; the order catches
+ * up on the next visit or sort change. A refused change puts the control
+ * back and says why; a stale copy reloads the page.
+ * </remarks>
+ */
+function addonInline(state, record, redrawn) {
+  const keys = Array.isArray(state.resource.inline) ? state.resource.inline : [];
+  const fields = keys
+    .map((key) => state.schema.fields.find((f) => f.key === key))
+    .filter((f) => f && f.type !== "readonly" && record[f.key] !== undefined);
+  if (!fields.length) return null;
+  const wrap = el("div", { class: "inl" });
+  const said = el("span", { class: "saved" });
+  /**
+   * <summary>Send one field, then take the stored record back.</summary>
+   * <param name="key">The field.</param>
+   * <param name="value">Its new value.</param>
+   * <param name="undo">Puts the control back after a refusal.</param>
+   */
+  const save = async (key, value, undo) => {
+    const addon = state.addon;
+    const resource = state.resource;
+    said.className = "saved";
+    said.textContent = "Saving\u2026";
+    try {
+      let etag = state.etag;
+      if (resource.etag === "record") {
+        etag = (await addonCall(addon.id, "/" + resource.name + "/" + record.id)).etag;
+      }
+      const body = {};
+      body[key] = value;
+      const done = await addonCall(addon.id, "/" + resource.name + "/" + record.id,
+                                   "PUT", body, etag);
+      if (resource.etag !== "record" && done.etag) state.etag = done.etag;
+      if (done.data) Object.assign(record, done.data);
+      said.textContent = "Saved";
+      redrawn();
+    } catch (err) {
+      if (err.status === 412) {
+        openResource(state.addon, resource,
+                     err.message + " The list below has been reloaded.");
+        return;
+      }
+      said.className = "saved bad";
+      said.textContent = err.message;
+      undo();
+    }
+  };
+  fields.forEach((field) => {
+    if (field.type === "time") {
+      const input = el("input", { type: "time", "aria-label": field.label });
+      input.value = record[field.key] || "";
+      input.addEventListener("change", () => {
+        const before = record[field.key];
+        if (!input.value || input.value === before) return;
+        save(field.key, input.value, () => { input.value = before || ""; });
+      });
+      wrap.append(input);
+      return;
+    }
+    if (field.type === "multichoice" && !field.options_from) {
+      const days = el("div", { class: "days", role: "group", "aria-label": field.label });
+      const options = field.options || [];
+      const picked = () => (Array.isArray(record[field.key]) ? record[field.key] : []);
+      const toggles = options.map((o) => {
+        const on = picked().some((p) => sameValue(p, o.value));
+        const t = button(String(o.label).slice(0, 3), on, () => {
+          const before = picked();
+          const pressed = t.getAttribute("aria-pressed") !== "true";
+          t.setAttribute("aria-pressed", pressed ? "true" : "false");
+          /* In the options' order, as the form sends it. */
+          const next = options.filter((opt, i) =>
+            toggles[i].getAttribute("aria-pressed") === "true").map((opt) => opt.value);
+          save(field.key, next, () => {
+            toggles.forEach((tog, i) => tog.setAttribute("aria-pressed",
+              before.some((p) => sameValue(p, options[i].value)) ? "true" : "false"));
+          });
+        });
+        t.title = o.label;
+        return t;
+      });
+      toggles.forEach((t) => days.append(t));
+      wrap.append(days);
+      return;
+    }
+    /* Anything else: the form's control, saved on each change. */
+    const values = Object.assign({}, record);
+    const made = addonControl(state, field, values, () => {
+      const before = record[field.key];
+      save(field.key, values[field.key], () => { values[field.key] = before; });
+    });
+    wrap.append(made.node);
+  });
+  wrap.append(said);
+  return wrap;
 }
 
 /**

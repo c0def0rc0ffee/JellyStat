@@ -420,6 +420,13 @@ re-rating. The page is built entirely from what each add-on says about itself,
 so another add-on that offers the API appears here with no change to
 JellyStat.
 
+An add-on can offer ways to sort its list, and can let some fields be changed
+right on a record's line. Engage's slots sort by when each runs next (the
+default), lists before sequences before favourites, name, or time of day, and
+each slot shows when it next runs under its name. Its days are a row of
+toggles and its time a time box on the line itself, each saved as soon as it
+changes. The order you pick is remembered in that browser.
+
 Each add-on checks every change itself, exactly as its own screens in Kodi
 would, and an edit made to something that was changed in Kodi meanwhile is
 refused rather than saved over it. The add-ons listen on the Kodi box only;

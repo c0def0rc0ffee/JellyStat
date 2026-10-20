@@ -7,7 +7,7 @@
   licence and icon.
   </summary>
 -->
-<addon id="script.jellystat" name="JellyStat" version="0.28.5" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.28.6" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -26,7 +26,10 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.28.5
+    <news lang="en_GB">v0.28.6
+The Add-ons page can sort an add-on's list and change some fields right on a record's line. Engage's slots sort by when each runs next, lists first, name or time of day, show when each next runs, and take their days and time on the line, saved as soon as they change. Needs Engage 1.11.5.
+
+v0.28.5
 Jellyfin now follows JellyStat's last watched dates. Every title whose logged date differs from Jellyfin's has its last played date written across in the background, after an import or a day being set aside and on the service's regular check, so Jellyfin for Kodi and your skin show the same date as the dashboard. Only the date is written. A toggle under History turns it off, and the Tools page shows what differs and what the server kept.
 
 v0.28.4
