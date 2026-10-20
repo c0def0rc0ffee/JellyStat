@@ -7,7 +7,7 @@
   licence and icon.
   </summary>
 -->
-<addon id="script.jellystat" name="JellyStat" version="0.28.6" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.28.7" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -26,7 +26,10 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.28.6
+    <news lang="en_GB">v0.28.7
+A calmer, redesigned dashboard. The Overview is now Home, grouped into Summary, Habits, Taste and History tabs, with one At a glance block and a This month or All time switch. Films and TV each have a Library and Stats switch. A sidebar on a desktop, an icon rail on a tablet, and a bottom tab bar on a phone, where the page no longer scrolls sideways. Boxes and buttons are only slightly rounded. Add to list on a film, show or episode also offers the Functional skin's lists, the ones the TV shows.
+
+v0.28.6
 The Add-ons page can sort an add-on's list and change some fields right on a record's line. Engage's slots sort by when each runs next, lists first, name or time of day, show when each next runs, and take their days and time on the line, saved as soon as they change. Needs Engage 1.11.5.
 
 v0.28.5

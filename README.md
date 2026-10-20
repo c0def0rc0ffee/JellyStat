@@ -206,8 +206,14 @@ the watched episode list, and its sittings.
 - **Over time**, newly watched titles per day and how the genre mix has
   moved, drawn from the daily history described below.
 
-The page adapts to a phone screen and follows the browser's light or dark
-setting. It is plain HTML with no external requests, so it works on a
+The Overview (**Home**) groups these into four tabs, **Summary**, **Habits**,
+**Taste** and **History**, so one set shows at a time, and remembers the one
+you last used. Each panel's explanation shows as one line until tapped.
+
+The page is laid out for three sizes: a sidebar on a desktop, an icon rail
+on a tablet, and on a phone a bottom tab bar (Home, Discover, Films, TV and
+More) with filters folded behind a button. It follows the browser's light or
+dark setting. It is plain HTML with no external requests, so it works on a
 network with no internet access.
 
 <img src="docs/screenshots/13-mobile-overview.png" alt="The same page on a phone" width="340">
@@ -397,7 +403,9 @@ categories to import.
 the rest of the addon has no way to express, since a list has no property in
 common that a query could find. Make one, name it, and add anything to it
 from a film, show or episode page: each carries an **Add to list** menu that
-also offers a new list. Clicking a list opens it as its own page, where it
+also offers a new list. When the Functional skin is on the same Kodi with its
+lists switched on for JellyStat, the same menu lists the skin's lists first,
+under **On the TV**, and adds the title to that list on the television. Clicking a list opens it as its own page, where it
 can be renamed, emptied entry by entry, or deleted.
 
 ![Lists](docs/screenshots/08-lists.png)

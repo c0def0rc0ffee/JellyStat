@@ -273,6 +273,40 @@ def next_unwatched(series_name):
     }
 
 
+def kodi_key(item_id=None, series_name=None):
+    """
+    <summary>
+    The Kodi library key of a film, episode or show, in the form the
+    Functional skin's lists use: 'movie:12', 'episode:340' or 'tvshow:5'.
+    </summary>
+    <param name="item_id">A film's or episode's Jellyfin id, mapped exactly
+    through the same index play and queue use.</param>
+    <param name="series_name">A show's name, matched on Kodi's show title,
+    ignoring case, as the show page's play buttons do.</param>
+    <returns>The key, or None when Kodi's library has no such item.</returns>
+    <remarks>
+    For the dashboard's Add to list menu, which adds to a Functional list
+    through that skin's add-on API (LISTS-FUNCTIONAL, 20/10/2026): the skin
+    takes any library key, so naming the item is all JellyStat has to do.
+    </remarks>
+    <exception cref="PlaybackError">When Kodi does not answer.</exception>
+    """
+    if item_id:
+        entry = resolve(item_id)
+        if entry is None:
+            return None
+        kind = "movie" if entry["type"] == "movieid" else "episode"
+        return "%s:%d" % (kind, entry["dbid"])
+    wanted = (series_name or "").strip().lower()
+    if not wanted:
+        return None
+    result = rpc("VideoLibrary.GetTVShows", {"properties": ["title"]})
+    show = next((entry for entry in result.get("tvshows") or []
+                 if (entry.get("title") or "").strip().lower() == wanted),
+                None)
+    return "tvshow:%d" % show["tvshowid"] if show else None
+
+
 def play_show(series_name, action="play"):
     """
     <summary>

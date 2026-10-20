@@ -562,6 +562,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, playback.status())
             except playback.PlaybackError as err:
                 self._send_json(503, {"error": str(err)})
+        elif route.path == "/api/kodikey":
+            # The Kodi library key of a film, episode (id) or show (show),
+            # for adding it to a Functional list (playback.kodi_key).
+            query = parse_qs(route.query)
+            try:
+                key = playback.kodi_key(
+                    item_id=(query.get("id") or [""])[0] or None,
+                    series_name=(query.get("show") or [""])[0] or None)
+            except playback.PlaybackError as err:
+                self._send_json(503, {"error": str(err)})
+            else:
+                if key:
+                    self._send_json(200, {"key": key})
+                else:
+                    self._send_json(404, {"error": "That is not in this Kodi "
+                                                   "box's library."})
         elif route.path == "/api/image":
             self._serve_image(parse_qs(route.query))
         elif route.path == "/api/person":

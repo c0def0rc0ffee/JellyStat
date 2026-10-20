@@ -736,7 +736,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   background: var(--accent); border-color: var(--accent); color: #fff; }
 .entryrow .inl .saved { font-size: 12px; color: var(--ink-dim); }
 .entryrow .inl .saved.bad { color: var(--warn); }
-.sortbar { display: flex; gap: 8px; align-items: center; margin: 0 0 10px;
+.addonsort { display: flex; gap: 8px; align-items: center; margin: 0 0 10px;
   font-size: 13px; color: var(--ink-dim); }
 /* Add-to-list, on item pages and on each episode card */
 .listadd select { font-size: 13px; padding: 6px 9px; border-radius: 8px;
@@ -812,11 +812,253 @@ label.restorebtn input { display: none; }
 /* The stats never loaded: the Overview has nothing true to show, so its
    panels stay hidden behind the error rather than reading as zeros. */
 #view-overview.nostats { display: none !important; }
+
+/* ======================================================================
+   REDESIGN, 20/10/2026. Layered after the original rules so each part
+   reads as what changed. Three widths: a sidebar from 1100px, an icon
+   rail from 700px, and below that a phone layout with a bottom tab bar.
+   Nothing here relies on color-mix, :has or container queries, because
+   the page is also opened from the televisions' older WebKit.
+   ====================================================================== */
+:root { --tabbar-h: 62px; }
+.wrap { max-width: 1440px; grid-template-columns: 200px minmax(0, 1fr);
+  padding: 0 24px 64px; gap: 22px; }
+/* Grid and flex children may shrink below their content, so a wide table or
+   chart scrolls inside its own panel instead of widening the whole page. */
+.wrap > *, main, .split > *, section.panel, .viewhead, .ovpane { min-width: 0; }
+#trend { overflow-x: auto; }
+
+/* Header: sticky, one line, the status cut short with the whole of it on
+   hover. */
+header { position: -webkit-sticky; position: sticky; top: 0; z-index: 40;
+  align-items: center; flex-wrap: nowrap; background: var(--bg);
+  margin: 0 -24px 6px; padding: 14px 24px 12px;
+  border-bottom: 1px solid var(--line); }
+header h1 { font-size: 21px; flex: none; }
+header .ver { flex: none; }
+header .meta { min-width: 0; max-width: 420px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+header .meta.bad { color: var(--warn); }
+button.iconbtn { display: inline-flex; align-items: center; gap: 7px;
+  flex: none; }
+button.iconbtn svg { width: 16px; height: 16px; stroke: currentColor;
+  fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Sidebar */
+nav.side { top: 86px; padding: 10px 8px; gap: 1px; }
+nav.side button { padding: 9px 12px; font-size: 14px; }
+nav.side .navlabel { font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--ink-dim); padding: 12px 12px 4px;
+  opacity: .8; }
+nav.side .navgap { height: 8px; margin: 0 6px 8px; }
+
+/* The phone's tab bar and More sheet exist only on a phone. */
+nav.tabbar, .moresheet { display: none; }
+
+/* Page heading row: a title and the view's own switch. */
+.viewhead { display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin: 6px 0 16px; }
+.pagetitle { margin: 0; font-size: 22px; font-weight: 700;
+  letter-spacing: -0.01em; }
+
+/* Segmented switch: the Overview's groups, Library and Stats, the period. */
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; }
+.seg button { border: 0; background: transparent; color: var(--ink-dim);
+  border-radius: 999px; padding: 7px 16px; font-size: 13.5px;
+  font-family: inherit; cursor: pointer; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff;
+  font-weight: 600; }
+.seg.small button { padding: 4px 11px; font-size: 12px; }
+
+/* The headline block */
+.tilewrap, #tiles { display: block; margin-bottom: 16px; }
+.tilehead { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.tilehead h3 { margin: 0; }
+.tileblock { padding: 18px 20px; }
+.tilegrid { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 16px 12px; }
+.tile .n { font-size: 21px; }
+
+/* Panels: a little more air, quieter hints. */
+section.panel { padding: 18px 20px; }
+section.panel > h2 { font-size: 16px; }
+/* HINT-CLAMP: one line until tapped. -webkit-line-clamp is the widely
+   supported form, including old WebKit. */
+section.panel > p.hint { display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1; overflow: hidden; cursor: pointer; }
+section.panel > p.hint.open { -webkit-line-clamp: unset; display: block; }
+section.panel > p.hint:empty { display: none; }
+.cards { gap: 12px; margin-bottom: 16px; }
+.card .v { font-size: 24px; }
+
+/* ---- tablet: an icon rail ---- */
+@media (max-width: 1099px) {
+  .wrap { display: grid; grid-template-columns: 78px minmax(0, 1fr);
+    padding: 0 18px 56px; gap: 16px; }
+  header { margin: 0 -18px 6px; padding: 12px 18px 10px; }
+  header .meta { max-width: 260px; }
+  nav.side { position: -webkit-sticky; position: sticky; top: 74px;
+    flex-direction: column; flex-wrap: nowrap; margin: 0; padding: 8px 6px; }
+  nav.side .navlabel { display: none; }
+  nav.side .navgap { display: block; margin: 4px 8px 6px; height: 4px; }
+  nav.side button { flex-direction: column; gap: 4px; padding: 9px 2px 7px;
+    font-size: 11px; text-align: center; justify-content: center; }
+  nav.side button svg { width: 20px; height: 20px; }
+  nav.side button.sub { padding-left: 2px; }
+}
+
+/* ---- phone: bottom tab bar ---- */
+@media (max-width: 699px) {
+  body { font-size: 14.5px; }
+  .wrap { display: block; padding: 0 12px calc(var(--tabbar-h) + 28px); }
+  header { position: static; flex-wrap: wrap; margin: 0 -12px 4px;
+    padding: 12px 12px 10px; gap: 8px 10px; }
+  header h1 { font-size: 19px; }
+  header .ver, header .meta { display: none; }
+  header .grow { display: none; }
+  header #refresh { margin-left: auto; padding: 6px 10px; }
+  header #refresh .lbl { display: none; }
+  .search { order: 5; flex: 1 1 100%; max-width: none; }
+  .search input { padding: 10px 14px; font-size: 16px; }
+  nav.side { display: none; }
+
+  nav.tabbar { display: flex; position: fixed; z-index: 50; left: 0; right: 0;
+    bottom: 0; height: var(--tabbar-h); background: var(--panel);
+    border-top: 1px solid var(--line);
+    padding: 4px 4px env(safe-area-inset-bottom, 0); }
+  nav.tabbar button { flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px; border: 0;
+    background: transparent; color: var(--ink-dim); font-size: 11px;
+    font-family: inherit; border-radius: 10px; cursor: pointer; }
+  nav.tabbar button svg, .moresheet button svg { width: 22px; height: 22px;
+    stroke: currentColor; fill: none; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
+  nav.tabbar button[aria-current="true"] { color: var(--accent);
+    font-weight: 600; }
+
+  .moresheet { position: fixed; z-index: 45; left: 0; right: 0; top: 0;
+    bottom: var(--tabbar-h); background: rgba(0, 0, 0, .45); display: flex;
+    align-items: flex-end; }
+  .moresheet[hidden] { display: none; }
+  .moresheet .sheet { width: 100%; background: var(--panel);
+    border-top: 1px solid var(--line); border-radius: 16px 16px 0 0;
+    padding: 10px 10px 12px; display: grid;
+    grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .moresheet button { display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding: 14px 4px; border: 0; border-radius: 12px;
+    background: var(--panel-2); color: var(--ink); font-size: 12.5px;
+    font-family: inherit; cursor: pointer; }
+  .moresheet button[aria-current="true"] { color: var(--accent);
+    font-weight: 600; }
+
+  .viewhead { margin: 10px 0 12px; }
+  .pagetitle { font-size: 20px; }
+  .viewhead .seg { width: 100%; display: flex; }
+  .viewhead .seg button { flex: 1; padding: 8px 6px; }
+  section.panel { padding: 14px; border-radius: 12px; margin-bottom: 12px; }
+  .tileblock { padding: 14px; border-radius: 12px; }
+  .tilegrid { grid-template-columns: repeat(3, 1fr); gap: 14px 8px; }
+  .tile { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .tile .n { font-size: 18px; }
+  .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card { padding: 12px; border-radius: 12px; }
+  .card .k { font-size: 10.5px; }
+  .card .v { font-size: 20px; }
+  .stgrid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .split { gap: 0; }
+  .bar { grid-template-columns: 96px 1fr auto; }
+  .bar .val { min-width: 48px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .hero .art { width: 110px; }
+  .hero .info { min-width: 0; }
+  .fieldrow input[type=text] { width: 100%; }
+  /* The now playing popup sits above the tab bar. */
+  #nowplaying.pos-br, #nowplaying.pos-bl, #nowplaying.pos-bc {
+    bottom: calc(var(--tabbar-h) + 12px); }
+}
+
+/* Fingers, not a mouse: the small chips and toggles get bigger targets. */
+@media (pointer: coarse) {
+  .tabs button, .genrefilter button, .whenbtn { padding: 7px 13px; }
+  .entryrow .inl .days button { padding: 6px 10px; }
+  .playbar button, button.action, a.action { padding: 9px 16px; }
+}
+
+/* REDESIGN part two, 20/10/2026 */
+.scroll, .heat, #trend, .pickresults, .search .results {
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.scroll::-webkit-scrollbar, .heat::-webkit-scrollbar, #trend::-webkit-scrollbar {
+  width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb, .heat::-webkit-scrollbar-thumb,
+#trend::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+.card .v { font-size: 21px; line-height: 1.2; }
+.filtertoggle { display: none; }
+@media (max-width: 999px) {
+  .split { grid-template-columns: 1fr; gap: 0; }
+}
+@media (max-width: 699px) {
+  /* One swipeable row of view chips instead of three wrapped rows. */
+  section.panel > .tabs { flex-wrap: nowrap; overflow-x: auto;
+    margin-left: -14px; margin-right: -14px; padding: 0 14px 2px;
+    scrollbar-width: none; }
+  section.panel > .tabs::-webkit-scrollbar { display: none; }
+  section.panel > .tabs button { flex: none; }
+  .filtertoggle { display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); background: transparent; color: var(--ink);
+    border-radius: 999px; padding: 7px 14px; font-size: 13px;
+    font-family: inherit; cursor: pointer; margin: 0 0 12px; }
+  .filtertoggle::after { content: "\25BE"; color: var(--ink-dim); }
+  .filtertoggle[aria-expanded="true"]::after { content: "\25B4"; }
+  section.panel:not(.filtersopen) > .sortbar,
+  section.panel:not(.filtersopen) > .genrefilter { display: none; }
+  .rateitem { grid-template-columns: 1fr; gap: 8px; }
+  .stars input[type="range"] { flex: 1; width: auto; min-width: 90px; }
+  .card .v { font-size: 18px; }
+}
+
+/* SQUARER, 20/10/2026: boxes only slightly rounded. Buttons and chips keep
+   their pill shape; every panel, card, tile and sheet comes down to 6px, and
+   the boxes inside them to 4px. Overrides the radii set further up, which
+   are left as they were. */
+:root { --radius: 6px; }
+section.panel, .card, .tileblock, nav.side, #nowplaying, .search .results,
+.addoncard, .stagebox { border-radius: 6px; }
+.stcard, .epcard, .cat, .mode, .outcome, .sugg, .dupenote, .copy, .poster,
+.cast img, .cast .noface, .hero .art img, .epcard img, .epcard .nostill,
+.librow, .playbar .whenbox.open, .libline .whenbox.open, .moresheet button,
+nav.side button { border-radius: 4px; }
+@media (max-width: 699px) {
+  section.panel, .tileblock, .card { border-radius: 6px; }
+  .moresheet .sheet { border-radius: 6px 6px 0 0; }
+}
+
+/* SQUARER BUTTONS, 20/10/2026: every button, chip, input and tag is almost
+   square, 4px, the small tags 3px. Left round on purpose: progress bars,
+   dots, the spinner and the slider's thumb, which are shapes rather than
+   things to press. */
+button.action, a.action, label.restorebtn, .playbar button, .pager button,
+.genrefilter button, .tabs button, .whenbtn, .filtertoggle,
+.entryrow .inl .days button, .stars .step, .search input, .search .results,
+.sortbar select, .sortbar input, .listadd select, .filerow input[type=text],
+.fieldrow input[type=text], .fieldrow input[type=number],
+.fieldrow input[type=time], .fieldrow input[type=date], .fieldrow select,
+.entryrow .inl input[type="time"], .addonsort select, nav.tabbar button,
+.seg { border-radius: 4px; }
+.seg button { border-radius: 3px; }
+header .ver, .badge, .tag, .listrow .tag, .itemhead .tag, .dupetag, .newtag,
+.copy .qual, .copy .tag, .sugg .seen, .bak .w { border-radius: 3px; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
+  <!-- REDESIGN 20/10/2026: one header, then the navigation drawn three ways
+       from the same buttons' data-view: a sidebar on a desktop, an icon rail
+       on a tablet and a bottom tab bar with a More sheet on a phone. -->
   <header>
     <h1>Jelly<span>Stat</span></h1>
     <span class="ver" id="ver"></span>
@@ -827,41 +1069,79 @@ label.restorebtn input { display: none; }
     </div>
     <div class="grow"></div>
     <div class="meta" id="stamp"></div>
-    <button class="action" id="refresh">Refresh</button>
+    <button class="action iconbtn" id="refresh" title="Read Jellyfin again"
+            aria-label="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5"/></svg><span class="lbl">Refresh</span></button>
   </header>
 
   <nav class="side" aria-label="Sections">
-    <button data-view="overview" aria-current="true">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-6M21 19H3"/></svg>
-      Overview</button>
+    <button data-view="overview">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg>
+      <span>Home</span></button>
     <button data-view="recommended">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg>
-      Discover</button>
-    <button data-view="movies">
+      <span>Discover</span></button>
+    <div class="navlabel">Library</div>
+    <button data-view="movies-library" data-group="movies movies-library">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M7 5v14M17 5v14M2.5 12h19"/></svg>
-      Movies</button>
-    <button data-view="movies-library" class="sub">Library</button>
-    <button data-view="tv">
+      <span>Films</span></button>
+    <button data-view="tv-library" data-group="tv tv-library">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="7" width="19" height="12" rx="2"/><path d="M8 3.5 12 7l4-3.5"/></svg>
-      TV</button>
-    <button data-view="tv-library" class="sub">Library</button>
+      <span>TV</span></button>
     <button data-view="rate">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 14V3M4 3l9 3-3 3 3 3-9 3"/></svg>
-      Rate</button>
+      <span>Rate</span></button>
     <button data-view="lists">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
-      Lists</button>
+      <span>Lists</span></button>
+    <div class="navgap"></div>
     <button data-view="addons">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3.5h5v4h4v5h-4v4h-5v-4h-4v-5h4z"/><path d="M12 16.5v4"/></svg>
-      Add-ons</button>
+      <span>Add-ons</span></button>
     <button data-view="data">
       <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/></svg>
-      Data</button>
-    <div class="navgap"></div>
+      <span>Data</span></button>
     <button data-view="settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.2 12a7.2 7.2 0 0 0-.1-1.2l2-1.5-2-3.4-2.3.9a7.3 7.3 0 0 0-2-1.2L14.4 3h-4l-.4 2.6a7.3 7.3 0 0 0-2 1.2l-2.3-.9-2 3.4 2 1.5a7.2 7.2 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-.9a7.3 7.3 0 0 0 2 1.2l.4 2.6h4l.4-2.6a7.3 7.3 0 0 0 2-1.2l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/></svg>
-      Settings</button>
+      <span>Settings</span></button>
   </nav>
+
+  <nav class="tabbar" aria-label="Sections">
+    <button data-view="overview">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg>
+      <span>Home</span></button>
+    <button data-view="recommended">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z"/></svg>
+      <span>Discover</span></button>
+    <button data-view="movies-library" data-group="movies movies-library">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M7 5v14M17 5v14M2.5 12h19"/></svg>
+      <span>Films</span></button>
+    <button data-view="tv-library" data-group="tv tv-library">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="7" width="19" height="12" rx="2"/><path d="M8 3.5 12 7l4-3.5"/></svg>
+      <span>TV</span></button>
+    <button type="button" id="morebtn" data-group="rate lists addons data settings" aria-haspopup="true"
+            aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>
+      <span>More</span></button>
+  </nav>
+  <div class="moresheet" id="moresheet" hidden>
+    <div class="sheet" role="menu" aria-label="More sections">
+    <button data-view="rate">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 14V3M4 3l9 3-3 3 3 3-9 3"/></svg>
+      <span>Rate</span></button>
+    <button data-view="lists">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
+      <span>Lists</span></button>
+    <button data-view="addons">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3.5h5v4h4v5h-4v4h-5v-4h-4v-5h4z"/><path d="M12 16.5v4"/></svg>
+      <span>Add-ons</span></button>
+    <button data-view="data">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8"/></svg>
+      <span>Data</span></button>
+    <button data-view="settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.2 12a7.2 7.2 0 0 0-.1-1.2l2-1.5-2-3.4-2.3.9a7.3 7.3 0 0 0-2-1.2L14.4 3h-4l-.4 2.6a7.3 7.3 0 0 0-2 1.2l-2.3-.9-2 3.4 2 1.5a7.2 7.2 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-.9a7.3 7.3 0 0 0 2 1.2l.4 2.6h4l.4-2.6a7.3 7.3 0 0 0 2-1.2l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z"/></svg>
+      <span>Settings</span></button>
+    </div>
+  </div>
 
   <div id="error"></div>
   <div id="loading">Reading your Jellyfin library…</div>
@@ -870,50 +1150,74 @@ label.restorebtn input { display: none; }
 
     <div id="view-overview">
 
-    <div class="tilewrap" id="tiles"></div>
-
-    <section class="panel">
-      <h2>Screen time</h2>
-      <p class="hint" id="st-window"></p>
-      <div class="stgrid" id="screentime"></div>
-    </section>
-
-    <div class="cards" id="cards"></div>
-
-    <section class="panel">
-      <h2>Watching calendar</h2>
-      <p class="hint">Last 12 months. Jellyfin stores only the most recent
-        play date per item, so each square counts distinct titles finished
-        that day, not every replay.</p>
-      <div class="heat" id="heat"></div>
-      <div class="legend" id="heatlegend"></div>
-    </section>
-
-    <div class="split">
-      <section class="panel">
-        <h2>Time of day</h2>
-        <p class="hint" id="hourshint">When a watch was finished, on this box's clock.</p>
-        <div id="hours"></div>
-      </section>
-      <section class="panel">
-        <h2>Day of the week</h2>
-        <p class="hint" id="weekdayshint">Which days carry the viewing.</p>
-        <div id="weekdays"></div>
-      </section>
+    <!-- OVERVIEW-TABS, 20/10/2026: the same panels as before, grouped so one
+         group shows at a time. The tab chosen is kept in this browser. -->
+    <div class="viewhead">
+      <h2 class="pagetitle">Home</h2>
+      <div class="seg" id="ovtabs" role="tablist" aria-label="Overview sections">
+        <button type="button" data-pane="summary">Summary</button>
+        <button type="button" data-pane="habits">Habits</button>
+        <button type="button" data-pane="taste">Taste</button>
+        <button type="button" data-pane="history">History</button>
+      </div>
     </div>
 
-    <section class="panel">
-      <h2>Genres</h2>
-      <p class="hint" id="genrehint"></p>
-      <div class="tabs" id="genretabs"></div>
-      <div class="barlist" id="genres"></div>
-    </section>
+    <div class="ovpane" data-pane="summary">
+      <div id="tiles"></div>
+      <div class="cards" id="cards"></div>
+      <div class="split">
+        <section class="panel">
+          <h2>Recently watched</h2>
+          <p class="hint">Newest first, films and episodes together.</p>
+          <div class="scroll" id="recent"></div>
+        </section>
+        <section class="panel">
+          <h2>Top shows</h2>
+          <p class="hint">By distinct episodes played.</p>
+          <div class="scroll" id="shows"></div>
+        </section>
+      </div>
+    </div>
 
-    <div class="split">
+    <div class="ovpane" data-pane="habits">
+      <section class="panel">
+        <h2>Screen time</h2>
+        <p class="hint" id="st-window"></p>
+        <div class="stgrid" id="screentime"></div>
+      </section>
+      <section class="panel">
+        <h2>Watching calendar</h2>
+        <p class="hint">Last 12 months. Jellyfin stores only the most recent
+          play date per item, so each square counts distinct titles finished
+          that day, not every replay.</p>
+        <div class="heat" id="heat"></div>
+        <div class="legend" id="heatlegend"></div>
+      </section>
+      <div class="split">
+        <section class="panel">
+          <h2>Time of day</h2>
+          <p class="hint" id="hourshint">When a watch was finished, on this box's clock.</p>
+          <div id="hours"></div>
+        </section>
+        <section class="panel">
+          <h2>Day of the week</h2>
+          <p class="hint" id="weekdayshint">Which days carry the viewing.</p>
+          <div id="weekdays"></div>
+        </section>
+      </div>
       <section class="panel">
         <h2>Recent days</h2>
         <p class="hint" id="recenthint"></p>
         <div id="recentdays"></div>
+      </section>
+    </div>
+
+    <div class="ovpane" data-pane="taste">
+      <section class="panel">
+        <h2>Genres</h2>
+        <p class="hint" id="genrehint"></p>
+        <div class="tabs" id="genretabs"></div>
+        <div class="barlist" id="genres"></div>
       </section>
       <section class="panel">
         <h2>Ratings you watch</h2>
@@ -922,39 +1226,34 @@ label.restorebtn input { display: none; }
       </section>
     </div>
 
-    <section class="panel">
-      <h2>Over time</h2>
-      <p class="hint">Built from one snapshot a day, taken by the addon on
-        this box, so it starts filling in from the day the dashboard was
-        first enabled.</p>
-      <div id="trend"></div>
-    </section>
-
-    <div class="split">
+    <div class="ovpane" data-pane="history">
       <section class="panel">
-        <h2>Top shows</h2>
-        <p class="hint">By distinct episodes played.</p>
-        <div class="scroll" id="shows"></div>
+        <h2>Over time</h2>
+        <p class="hint">Built from one snapshot a day, taken by the addon on
+          this box, so it starts filling in from the day the dashboard was
+          first enabled.</p>
+        <div id="trend"></div>
       </section>
       <section class="panel">
-        <h2>Recently watched</h2>
-        <p class="hint">Newest first, films and episodes together.</p>
-        <div class="scroll" id="recent"></div>
+        <h2>Rewatches</h2>
+        <p class="hint">Titles with more than one logged sitting: the thing
+          Jellyfin's play count knows happened but cannot date.</p>
+        <div class="scroll" id="rewatches"></div>
       </section>
     </div>
-
-    <section class="panel">
-      <h2>Rewatches</h2>
-      <p class="hint">Titles with more than one logged sitting: the thing
-        Jellyfin's play count knows happened but cannot date.</p>
-      <div class="scroll" id="rewatches"></div>
-    </section>
 
     </div><!-- /view-overview -->
 
     <div id="view-item" style="display:none"></div>
 
     <div id="view-movies" style="display:none">
+      <div class="viewhead">
+        <h2 class="pagetitle">Films</h2>
+        <div class="seg viewtabs" aria-label="Films">
+          <button type="button" data-view="movies-library">Library</button>
+          <button type="button" data-view="movies">Stats</button>
+        </div>
+      </div>
       <div class="cards" id="movie-cards"></div>
       <section class="panel">
         <h2>Films by decade</h2>
@@ -976,6 +1275,13 @@ label.restorebtn input { display: none; }
     </div>
 
     <div id="view-tv" style="display:none">
+      <div class="viewhead">
+        <h2 class="pagetitle">TV</h2>
+        <div class="seg viewtabs" aria-label="TV">
+          <button type="button" data-view="tv-library">Library</button>
+          <button type="button" data-view="tv">Stats</button>
+        </div>
+      </div>
       <div class="cards" id="tv-cards"></div>
       <div class="split">
         <section class="panel">
@@ -993,10 +1299,18 @@ label.restorebtn input { display: none; }
     </div>
 
     <div id="view-movies-library" style="display:none">
+      <div class="viewhead">
+        <h2 class="pagetitle">Films</h2>
+        <div class="seg viewtabs" aria-label="Films">
+          <button type="button" data-view="movies-library">Library</button>
+          <button type="button" data-view="movies">Stats</button>
+        </div>
+      </div>
       <section class="panel">
         <h2>Film library</h2>
         <p class="hint" id="movies-lib-hint"></p>
         <div class="tabs" id="movies-lib-shows"></div>
+        <button type="button" class="filtertoggle" aria-expanded="false">Filters and sort</button>
         <div class="sortbar" id="movies-lib-sort"></div>
         <div class="genrefilter" id="movies-lib-genres"></div>
         <div id="movies-lib"></div>
@@ -1005,10 +1319,18 @@ label.restorebtn input { display: none; }
     </div>
 
     <div id="view-tv-library" style="display:none">
+      <div class="viewhead">
+        <h2 class="pagetitle">TV</h2>
+        <div class="seg viewtabs" aria-label="TV">
+          <button type="button" data-view="tv-library">Library</button>
+          <button type="button" data-view="tv">Stats</button>
+        </div>
+      </div>
       <section class="panel">
         <h2>TV library</h2>
         <p class="hint" id="tv-lib-hint"></p>
         <div class="tabs" id="tv-lib-shows"></div>
+        <button type="button" class="filtertoggle" aria-expanded="false">Filters and sort</button>
         <div class="sortbar" id="tv-lib-sort"></div>
         <div class="genrefilter" id="tv-lib-genres"></div>
         <div id="tv-lib"></div>
@@ -1021,6 +1343,7 @@ label.restorebtn input { display: none; }
         <h2>Films</h2>
         <p class="hint" id="movie-recs-hint"></p>
         <div class="tabs" id="movie-recs-tabs"></div>
+        <button type="button" class="filtertoggle" aria-expanded="false">Filters and sort</button>
         <div class="sortbar" id="movie-recs-sort"></div>
         <div class="genrefilter" id="movie-recs-genres"></div>
         <div id="movie-recs"></div>
@@ -1030,6 +1353,7 @@ label.restorebtn input { display: none; }
         <h2>Shows</h2>
         <p class="hint" id="tv-recs-hint"></p>
         <div class="tabs" id="tv-recs-tabs"></div>
+        <button type="button" class="filtertoggle" aria-expanded="false">Filters and sort</button>
         <div class="sortbar" id="tv-recs-sort"></div>
         <div class="genrefilter" id="tv-recs-genres"></div>
         <div id="tv-recs"></div>
@@ -1388,6 +1712,8 @@ try {
   if (REC_MODES[saved.recMovies]) PREFS.recMovies = saved.recMovies;
   if (REC_MODES[saved.recTv]) PREFS.recTv = saved.recTv;
   if (NP_POSITIONS[saved.npPosition]) PREFS.npPosition = saved.npPosition;
+  if (typeof saved.ovPane === "string") PREFS.ovPane = saved.ovPane;
+  if (saved.tilePeriod === "all") PREFS.tilePeriod = "all";
   /* The sort chosen on each add-on resource page, by "addon/resource". */
   if (saved.addonSorts && typeof saved.addonSorts === "object") {
     PREFS.addonSorts = saved.addonSorts;
@@ -2196,6 +2522,8 @@ let STATS_FAILED = false;
 /* The view on screen, kept by showView, so a failed Refresh pressed from
    another page can keep the stats banner off that page too. */
 let CURRENT_VIEW = "overview";
+/* Where the item page was opened from, for its back link. */
+let PREVIOUS_VIEW = "overview";
 
 /**
  * <summary>
@@ -2218,7 +2546,7 @@ function showError(message) {
 async function load(force) {
   const refresh = $("refresh");
   refresh.disabled = true;
-  refresh.textContent = force ? "Refreshing…" : "Refresh";
+  refresh.querySelector(".lbl").textContent = force ? "Refreshing…" : "Refresh";
   try {
     const response = await fetch("/api/data" + (force ? "?refresh=1" : ""),
                                  { cache: "no-store" });
@@ -2570,6 +2898,7 @@ function renderStamp() {
   if (!DATA) return;
   $("ver").textContent = DATA.addon_version ? "v" + DATA.addon_version : "";
   if (DATA.source === "mirror") {
+    $("stamp").classList.add("bad");
     $("stamp").textContent = "Jellyfin unreachable, showing the addon's "
       + "own copy, last synced " + (DATA.mirror.synced_at
         ? fmtStamp(DATA.mirror.synced_at) : "never");
@@ -2580,6 +2909,7 @@ function renderStamp() {
          ? " · " + num(DATA.mirror.items)
            + " items mirrored locally" : "");
   }
+  $("stamp").title = $("stamp").textContent;
 }
 
 /* ---------- settings ---------- */
@@ -3847,10 +4177,29 @@ function renderTiles() {
   if (!TILES) return;
   const host = $("tiles");
   host.textContent = "";
-  [["This month", TILES.this_month], ["All time", TILES.all_time]]
+  /* One block with a switch rather than two side by side: the two periods
+     are the same six numbers, and reading them one set at a time is what
+     made the top of the page calm (OVERVIEW-TABS, 20/10/2026). */
+  const period = PREFS.tilePeriod === "all" ? "all" : "month";
+  const chosen = period === "all"
+    ? [["All time", TILES.all_time]] : [["This month", TILES.this_month]];
+  chosen
     .forEach(([heading, data]) => {
       const block = el("div", { class: "tileblock" });
-      block.append(el("h3", {}, heading));
+      const head = el("div", { class: "tilehead" });
+      /* The switch already names the period, so the heading does not. */
+      head.append(el("h3", {}, "At a glance"));
+      const seg = el("div", { class: "seg small", role: "group",
+                              "aria-label": "Period" });
+      [["month", "This month"], ["all", "All time"]].forEach(([key, label]) => {
+        seg.append(button(label, key === period, () => {
+          PREFS.tilePeriod = key;
+          savePrefs();
+          renderTiles();
+        }));
+      });
+      head.append(seg);
+      block.append(head);
       const grid = el("div", { class: "tilegrid" });
       [["episodes", num(data.episodes), "Episodes"],
        ["shows", num(data.shows), "Shows"],
@@ -4801,15 +5150,98 @@ $("listattach").addEventListener("click", async () => {
    version needed three clicks (reveal, choose, confirm), which is a lot of
    ceremony for adding a film to a list, and the confirm step did nothing
    the choice had not already said. */
+/* LISTS-FUNCTIONAL, 20/10/2026: the Functional skin's lists, the ones the TV
+   shows, offered beside JellyStat's own in the same menu. */
+let FN_LISTS = null;
+const FN_ADDON = "skin.functional";
+
+/**
+ * <summary>
+ * The Functional skin's lists, fetched through its add-on API and kept.
+ * </summary>
+ * <param name="force">Fetch again even when they are kept.</param>
+ * <returns>A promise of [{id, name}], empty when the skin is not on this
+ * Kodi, has its API switched off, or does not answer.</returns>
+ */
+async function functionalLists(force) {
+  if (FN_LISTS && !force) return FN_LISTS;
+  try {
+    if (!ADDONS.length || force) {
+      const response = await fetch("/api/addons", { cache: "no-store" });
+      const reply = await response.json();
+      ADDONS = (response.ok && reply.addons) || [];
+    }
+    const skin = ADDONS.find((a) => a.id === FN_ADDON && !a.problem
+      && ((a.info || {}).resources || []).some((r) => r.name === "lists"));
+    if (!skin) {
+      FN_LISTS = [];
+      return FN_LISTS;
+    }
+    const got = await addonCall(FN_ADDON, "/lists");
+    FN_LISTS = ((got.data && got.data.items) || [])
+      .map((rec) => ({ id: rec.id, name: rec.name }));
+  } catch (err) {
+    FN_LISTS = [];
+  }
+  return FN_LISTS;
+}
+
+/**
+ * <summary>
+ * Add a film, episode or show to one of the Functional skin's lists.
+ * </summary>
+ * <param name="listId">The list's id in the skin's API.</param>
+ * <param name="target">{id} for a film or episode (its Jellyfin id), {show}
+ * for a whole show (its name).</param>
+ * <returns>A promise of {added, name}: whether it was new to the list, and
+ * the list's name.</returns>
+ * <exception cref="Error">When Kodi's library has no such item, or the skin
+ * refuses the change; a list changed on the TV meanwhile is read again
+ * and tried once more.</exception>
+ * <remarks>
+ * JellyStat asks its own server for the item's Kodi library key, which the
+ * skin takes as it is (the same key its Lists screen stores), then adds it
+ * to the end of the list. Only the key matters to the skin; what is
+ * already on the list is sent back unchanged.
+ * </remarks>
+ */
+async function addToFunctionalList(listId, target) {
+  const query = target.id ? "id=" + encodeURIComponent(target.id)
+    : "show=" + encodeURIComponent(target.show || "");
+  const response = await fetch("/api/kodikey?" + query, { cache: "no-store" });
+  const found = await response.json();
+  if (!response.ok) throw new Error(found.error || "HTTP " + response.status);
+  const path = "/lists/" + encodeURIComponent(listId);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const current = await addonCall(FN_ADDON, path);
+    const list = current.data || {};
+    const items = list.items || [];
+    if (items.some((it) => it.key === found.key)) {
+      return { added: false, name: list.name };
+    }
+    try {
+      const done = await addonCall(FN_ADDON, path, "PUT",
+        { items: items.concat([{ key: found.key }]) }, current.etag);
+      return { added: true, name: (done.data && done.data.name) || list.name };
+    } catch (err) {
+      if (err.status !== 412 || attempt) throw err;
+    }
+  }
+  throw new Error("The list kept changing on the TV; try again.");
+}
+
 /**
  * <summary>
  * An add to list menu that adds on choice or offers a new list.
  * </summary>
  * <param name="itemId">The item.</param>
  * <param name="compact">Inline styling.</param>
+ * <param name="target">How the Functional skin's lists name it: {id} for a
+ * film or episode, {show} for a whole show; undefined to offer only
+ * JellyStat's own lists.</param>
  * <returns>A div.</returns>
  */
-function listPicker(itemId, compact) {
+function listPicker(itemId, compact, target) {
   const wrap = el("div", { class: compact ? "listadd" : "playbar listadd" });
   const picker = el("select", { "aria-label": "Add to list" });
   const say = el("span", { class: "say" });
@@ -4822,15 +5254,28 @@ function listPicker(itemId, compact) {
   function fill() {
     picker.textContent = "";
     picker.append(el("option", { value: "" }, "Add to list\u2026"));
+    /* Two groups once the skin's lists are known: the TV's first, since
+       those are the ones that show up on the sofa. */
+    const tv = target ? (FN_LISTS || []) : [];
+    if (tv.length) {
+      const group = el("optgroup", { label: "On the TV (Functional)" });
+      tv.forEach((list) => {
+        group.append(el("option", { value: "fn:" + list.id }, list.name));
+      });
+      picker.append(group);
+    }
+    const own = tv.length ? el("optgroup", { label: "JellyStat lists" }) : picker;
     (LIST_CACHE || []).forEach((list) => {
-      picker.append(el("option", { value: String(list.id) }, list.name));
+      own.append(el("option", { value: String(list.id) }, list.name));
     });
-    picker.append(el("option", { value: "new" }, "New list\u2026"));
+    own.append(el("option", { value: "new" }, "New list\u2026"));
+    if (own !== picker) picker.append(own);
     picker.value = "";
   }
 
   fill();
   listsCached().then(fill).catch(() => {});
+  if (target) functionalLists().then(fill).catch(() => {});
   /* Refilled as it is opened, so a list made on another page in the
      meantime is in the menu rather than missing from it. */
   picker.addEventListener("focus", fill);
@@ -4842,6 +5287,12 @@ function listPicker(itemId, compact) {
     say.className = "say";
     say.textContent = "Adding\u2026";
     try {
+      if (choice.indexOf("fn:") === 0) {
+        const got = await addToFunctionalList(choice.slice(3), target);
+        say.textContent = (got.added ? "Added to \u201c" : "Already on \u201c")
+          + got.name + "\u201d on the TV.";
+        return;
+      }
       let listId = choice;
       if (choice === "new") {
         const name = window.prompt("Name the new list");
@@ -5204,7 +5655,7 @@ function addonSortChosen(addon, resource, sorts) {
  * </remarks>
  */
 function addonSortBar(addon, resource, sorts, redraw) {
-  const bar = el("div", { class: "sortbar" });
+  const bar = el("div", { class: "addonsort" });
   const select = el("select", { "aria-label": "Sort by" });
   const current = addonSortChosen(addon, resource, sorts);
   sorts.forEach((entry) => {
@@ -7018,41 +7469,135 @@ const VIEWS = ["overview", "item", "data", "settings", "movies", "tv",
  * </remarks>
  */
 function showView(name) {
+  /* The item page's back link returns to wherever it was opened from. */
+  if (name === "item" && CURRENT_VIEW !== "item") PREVIOUS_VIEW = CURRENT_VIEW;
   CURRENT_VIEW = name;
+  closeMoreSheet();
   VIEWS.forEach((view) => {
     $("view-" + view).style.display = view === name ? "block" : "none";
   });
   if (STATS_FAILED) $("error").style.display = name === "overview" ? "block" : "none";
-  document.querySelectorAll("nav.side button").forEach((btn) => {
-    btn.setAttribute("aria-current",
-      btn.dataset.view === name ? "true" : "false");
+  /* A navigation button is current for its own view and for every view in
+     its group: Films for its library and its stats, More for what it holds.
+     The Library and Stats switches mark only their own view. */
+  document.querySelectorAll("nav.side button, nav.tabbar button, .moresheet button")
+    .forEach((btn) => {
+      const group = (btn.dataset.group || "").split(" ");
+      const on = btn.dataset.view === name || group.indexOf(name) >= 0;
+      btn.setAttribute("aria-current", on ? "true" : "false");
+    });
+  document.querySelectorAll(".viewtabs button").forEach((btn) => {
+    btn.setAttribute("aria-pressed", btn.dataset.view === name ? "true" : "false");
   });
   window.scrollTo(0, 0);
 }
 
-document.querySelectorAll("nav.side button").forEach((btn) => {
+/**
+ * <summary>
+ * Show a view and load whatever it fetches for itself.
+ * </summary>
+ * <param name="name">A VIEWS entry.</param>
+ * <remarks>
+ * What every navigation button, tab bar button, More sheet entry and
+ * Library or Stats switch calls. showView alone is for code that has
+ * already filled the view it is showing.
+ * </remarks>
+ */
+function openView(name) {
+  showView(name);
+  if (name === "data") {
+    renderDataFacts();
+    loadBackups();
+    loadReconcile();
+    loadBulkDays();
+    loadDatePush();
+  }
+  if (name === "settings") renderSettings();
+  if (name === "movies" || name === "tv") loadMediaPage(name);
+  if (name === "movies-library") loadLibrary("movies");
+  if (name === "tv-library") loadLibrary("tv");
+  if (name === "recommended") {
+    loadRecs("movies");
+    loadRecs("tv");
+  }
+  if (name === "rate") loadRateQueue(RATE_MEDIA);
+  if (name === "lists") loadLists();
+  if (name === "addons") loadAddons();
+}
+
+document.querySelectorAll("button[data-view]").forEach((btn) => {
+  btn.addEventListener("click", () => openView(btn.dataset.view));
+});
+
+/**
+ * <summary>
+ * Close the phone's More sheet, when it is open.
+ * </summary>
+ */
+function closeMoreSheet() {
+  const sheet = $("moresheet");
+  if (!sheet || sheet.hidden) return;
+  sheet.hidden = true;
+  $("morebtn").setAttribute("aria-expanded", "false");
+}
+
+$("morebtn").addEventListener("click", () => {
+  const sheet = $("moresheet");
+  if (!sheet.hidden) {
+    closeMoreSheet();
+    return;
+  }
+  sheet.hidden = false;
+  $("morebtn").setAttribute("aria-expanded", "true");
+});
+/* A tap on the shade outside the sheet closes it, as does Escape. */
+$("moresheet").addEventListener("click", (evt) => {
+  if (evt.target === $("moresheet")) closeMoreSheet();
+});
+document.addEventListener("keydown", (evt) => {
+  if (evt.key === "Escape") closeMoreSheet();
+});
+
+/**
+ * <summary>
+ * Show one group of the Overview's panels and remember the choice.
+ * </summary>
+ * <param name="pane">summary, habits, taste or history.</param>
+ */
+function showOverviewPane(pane) {
+  const known = ["summary", "habits", "taste", "history"];
+  if (known.indexOf(pane) < 0) pane = "summary";
+  document.querySelectorAll("#view-overview .ovpane").forEach((node) => {
+    node.style.display = node.dataset.pane === pane ? "block" : "none";
+  });
+  document.querySelectorAll("#ovtabs button").forEach((btn) => {
+    btn.setAttribute("aria-pressed", btn.dataset.pane === pane ? "true" : "false");
+  });
+  PREFS.ovPane = pane;
+  savePrefs();
+}
+
+document.querySelectorAll("#ovtabs button").forEach((btn) => {
+  btn.addEventListener("click", () => showOverviewPane(btn.dataset.pane));
+});
+showOverviewPane(PREFS.ovPane);
+
+/* HINT-CLAMP: a panel's explanation shows as one line until it is tapped,
+   so a page of panels reads as headings and numbers first. */
+document.addEventListener("click", (evt) => {
+  const hint = evt.target.closest && evt.target.closest("section.panel > p.hint");
+  if (hint) hint.classList.toggle("open");
+});
+
+/* FILTER-FOLD: on a phone a panel's sort bar and genre chips fold behind
+   its Filters button, so the titles start near the top of the screen. The
+   button only shows at that width; wider, everything is always open. */
+document.querySelectorAll(".filtertoggle").forEach((btn) => {
   btn.addEventListener("click", () => {
-    showView(btn.dataset.view);
-    if (btn.dataset.view === "data") {
-      renderDataFacts();
-      loadBackups();
-      loadReconcile();
-      loadBulkDays();
-      loadDatePush();
-    }
-    if (btn.dataset.view === "settings") renderSettings();
-    if (btn.dataset.view === "movies" || btn.dataset.view === "tv") {
-      loadMediaPage(btn.dataset.view);
-    }
-    if (btn.dataset.view === "movies-library") loadLibrary("movies");
-    if (btn.dataset.view === "tv-library") loadLibrary("tv");
-    if (btn.dataset.view === "recommended") {
-      loadRecs("movies");
-      loadRecs("tv");
-    }
-    if (btn.dataset.view === "rate") loadRateQueue(RATE_MEDIA);
-    if (btn.dataset.view === "lists") loadLists();
-    if (btn.dataset.view === "addons") loadAddons();
+    const panel = btn.closest("section.panel");
+    const open = !panel.classList.contains("filtersopen");
+    panel.classList.toggle("filtersopen", open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
   });
 });
 
@@ -7305,9 +7850,9 @@ function itemShell() {
   $("searchbox").value = "";
   const host = $("view-item");
   host.textContent = "";
-  const back = el("button", { class: "backlink", type: "button" },
-                  "← Back to overview");
-  back.addEventListener("click", () => showView("overview"));
+  const back = el("button", { class: "backlink", type: "button" }, "← Back");
+  /* Read when clicked, not now: showView("item") below is what records it. */
+  back.addEventListener("click", () => openView(PREVIOUS_VIEW || "overview"));
   host.append(back);
   showView("item");
   return host;
@@ -7620,7 +8165,7 @@ async function fillEpisodes(seriesId, note, cards) {
       /* Per episode, not just per show: a list of "episodes to show Dad"
          is a different thing from a list of shows, and the series-level
          control could only ever add the whole series. */
-      if (ep.id) body.append(listPicker(ep.id, true));
+      if (ep.id) body.append(listPicker(ep.id, true, { id: ep.id }));
       card.append(body);
       cards.append(card);
     });
@@ -7750,7 +8295,7 @@ async function openMovie(id) {
   host.append(playBar({ id: movie.id,
                         sittings: movie.watched ? movie.sittings : null,
                         play_count: movie.play_count }));
-  host.append(listPicker(movie.id));
+  host.append(listPicker(movie.id, false, { id: movie.id }));
   if (!movie.watched) host.append(notWatchedNote("film"));
   host.append(castPanel(detail));
   if (movie.watched) host.append(sittingsPanel(movie.sittings));
@@ -7805,7 +8350,7 @@ async function openShow(name) {
     ]));
     host.append(playBar({ show: show.name }));
     if (show.series_id || show.id) {
-      host.append(listPicker(show.series_id || show.id));
+      host.append(listPicker(show.series_id || show.id, false, { show: show.name }));
     }
     host.append(notWatchedNote("show"));
     host.append(similarPanel("tv"));
@@ -7825,7 +8370,7 @@ async function openShow(name) {
   host.append(playBar({ show: show.name, sittings: show.sittings,
                         play_count: show.plays }));
   if (show.series_id || show.id) {
-    host.append(listPicker(show.series_id || show.id));
+    host.append(listPicker(show.series_id || show.id, false, { show: show.name }));
   }
 
   const seasons = el("section", { class: "panel" });
