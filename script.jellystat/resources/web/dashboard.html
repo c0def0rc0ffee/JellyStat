@@ -3461,6 +3461,29 @@ function genreChips(host, state, payload, reload) {
 
 /**
  * <summary>
+ * Scroll so the top of the panel holding a node is just under the header.
+ * </summary>
+ * <param name="node">Anything inside the panel.</param>
+ * <remarks>
+ * For the Back and Forward of Discover and the two libraries: the new page
+ * loads where the old one was,
+ * so without this the reader is left at the foot of the films, or below them
+ * at the start of the shows, rather than at the first new title. The sticky
+ * header's height is allowed for, since it would otherwise cover the
+ * panel's heading.
+ * </remarks>
+ */
+function scrollToPanel(node) {
+  const panel = node.closest("section.panel") || node;
+  const header = document.querySelector("header");
+  const sticky = header && getComputedStyle(header).position !== "static"
+    ? header.offsetHeight : 0;
+  const top = panel.getBoundingClientRect().top + window.pageYOffset - sticky - 10;
+  window.scrollTo(0, Math.max(0, top));
+}
+
+/**
+ * <summary>
  * The showing from, to and of line with back and forward buttons for recommendations.
  * </summary>
  * <param name="media">movies or tv.</param>
@@ -3485,15 +3508,17 @@ function renderPager(media, payload) {
 
   const back = el("button", { type: "button" }, "‹ Back");
   back.disabled = payload.offset <= 0;
-  back.addEventListener("click", () => {
+  back.addEventListener("click", async () => {
     state.offset = Math.max(0, state.offset - state.pageSize);
-    loadRecs(media);
+    await loadRecs(media);
+    scrollToPanel(host);
   });
   const forward = el("button", { type: "button" }, "Forward ›");
   forward.disabled = to >= total;
-  forward.addEventListener("click", () => {
+  forward.addEventListener("click", async () => {
     state.offset = state.offset + state.pageSize;
-    loadRecs(media);
+    await loadRecs(media);
+    scrollToPanel(host);
   });
   host.append(back, forward);
 }
@@ -7393,15 +7418,18 @@ function renderLibPager(media, payload) {
     "Showing " + num(from) + " to " + num(to) + " of " + num(total)));
   const back = el("button", { type: "button" }, "‹ Back");
   back.disabled = payload.offset <= 0;
-  back.addEventListener("click", () => {
+  /* Back to the top of the list once the new page is in, as Discover does. */
+  back.addEventListener("click", async () => {
     state.offset = Math.max(0, state.offset - state.pageSize);
-    loadLibrary(media);
+    await loadLibrary(media);
+    scrollToPanel(host);
   });
   const forward = el("button", { type: "button" }, "Forward ›");
   forward.disabled = to >= total;
-  forward.addEventListener("click", () => {
+  forward.addEventListener("click", async () => {
     state.offset = state.offset + state.pageSize;
-    loadLibrary(media);
+    await loadLibrary(media);
+    scrollToPanel(host);
   });
   host.append(back, forward);
 }
