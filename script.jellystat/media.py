@@ -283,7 +283,7 @@ def fetch_image(item_id, kind="Primary", width=400):
         creds["base"], item_id, kind,
         urllib.parse.urlencode({"maxWidth": width, "quality": 90}))
     request = urllib.request.Request(url, headers={
-        "X-Emby-Token": creds["token"]})
+        "Authorization": core.auth_header(creds["token"])})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             content_type = response.headers.get("Content-Type") or "image/jpeg"

@@ -239,7 +239,8 @@ def _request(url, token, method, body=None):
     TLS verification is skipped when the ignore_ssl setting is on.
     </remarks>
     """
-    headers = {"X-Emby-Token": token, "Accept": "application/json"}
+    headers = {"Authorization": core.auth_header(token),
+               "Accept": "application/json"}
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")

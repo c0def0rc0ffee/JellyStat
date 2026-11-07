@@ -146,6 +146,22 @@ def get_credentials():
 # Jellyfin API
 # ---------------------------------------------------------------------------
 
+def auth_header(token):
+    """
+    <summary>
+    The Authorization header value for a Jellyfin call.
+    </summary>
+    <param name="token">API key or access token.</param>
+    <returns>The header value, carrying the token and nothing else.</returns>
+    <remarks>
+    Jellyfin 12 answers 401 to the old X-Emby-Token header. Device fields are
+    left out on purpose: sent with a token, they can overwrite how Jellyfin for
+    Kodi's own device is recorded on the server.
+    </remarks>
+    """
+    return 'MediaBrowser Token="%s"' % token
+
+
 def api_get(base, token, path, params=None):
     """
     <summary>
@@ -165,7 +181,7 @@ def api_get(base, token, path, params=None):
     if params:
         url += "?" + urllib.parse.urlencode(params)
     request = urllib.request.Request(url, headers={
-        "X-Emby-Token": token,
+        "Authorization": auth_header(token),
         "Accept": "application/json",
     })
     context = None
