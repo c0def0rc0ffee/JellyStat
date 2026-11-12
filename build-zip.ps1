@@ -1,3 +1,5 @@
+# SUPERSEDED on 7th November 2026. Kept for reference only: nobody runs it
+# and it is not a Windows target. The Linux build is build-zip.py.
 # <summary>
 # Builds two versioned zips straight from the project root, plus the local
 # runnable copy:

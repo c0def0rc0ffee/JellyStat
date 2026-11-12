@@ -1984,9 +1984,10 @@ def local_urls(port):
         probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         probe.settimeout(0.5)
         # No packet is sent by connect() on UDP; this just picks the route.
-        # A public address, so a box with a 10/8 side route still answers
-        # with the interface its default route uses.
-        probe.connect(("8.8.8.8", 1))
+        # An RFC 5737 documentation address: outside every private range, so
+        # a box with a 10/8 side route still answers with the interface its
+        # default route uses, and it names nobody's real host (gold rule 1).
+        probe.connect(("192.0.2.1", 1))
         urls.append("http://%s:%d/" % (probe.getsockname()[0], port))
         probe.close()
     except OSError:
