@@ -27,6 +27,7 @@
   --movie: #7c5cff;
   --episode: #35c2a5;
   --warn: #ff8b8b;
+  --log-problem: #ff8b8b;
   --heat-0: #1b1f2b;
   --radius: 14px;
 }
@@ -40,6 +41,8 @@
     --ink: #1a1c25;
     --ink-dim: #676e85;
     --heat-0: #e6e8f0;
+    /* The dark theme's warn red is about 2:1 on the light log box. */
+    --log-problem: #b3261e;
   }
 }
 * { box-sizing: border-box; }
@@ -320,6 +323,31 @@ h3.steph { font-size: 14.5px; margin: 22px 0 6px;
 .bak .w.before { color: #ffb86b; border-color: #ffb86b55; }
 .bak .w.after { color: #4ad991; border-color: #4ad99155; }
 .bak .grow { flex: 1; }
+
+/* Kodi log */
+.logbar { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center;
+  margin: 0 0 10px; font-size: 12.5px; color: var(--ink-dim); }
+.logbar input {
+  flex: 1; min-width: 0; background: var(--panel-2); color: var(--ink);
+  font-family: inherit; border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 9px; font-size: 13px;
+}
+.logbar input:focus-visible { outline: 2px solid var(--accent);
+  outline-offset: 1px; }
+.logview { margin: 0 0 12px; max-height: 60vh; overflow: auto;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 10px 12px; font-size: 12px; line-height: 1.45;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; }
+.logview:empty { display: none; }
+.logview:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.logview .problem { color: var(--log-problem); }
+/* Not p.hint: those clamp to one line until tapped, and this warning and
+   the status line must always be read in full. */
+.logwarn, .logstatus { margin: 0 0 12px; font-size: 12.5px;
+  color: var(--ink-dim); }
+.logwarn { color: var(--ink); }
+.logdl { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Genre filter chips */
 /* Ordering and the numeric filters. Kept on one row above the genre chips:
@@ -1563,6 +1591,36 @@ header .ver, .badge, .tag, .listrow .tag, .itemhead .tag, .dupetag, .newtag,
           show's page.</p>
         <div class="tabs" id="pref-rectv"></div>
       </div>
+    </section>
+
+    <!-- Shown only when /api/logs says a dashboard password is set. -->
+    <section class="panel" id="logpanel" style="display:none">
+      <h2>Kodi log</h2>
+      <p class="hint">The log of the Kodi this dashboard runs on, for
+        tracking down a fault without fetching the file by hand.</p>
+      <p class="logwarn">It holds server addresses and account ids, so keep
+        downloaded copies to yourself.</p>
+
+      <div class="prefrow">
+        <h3>Log</h3>
+        <div class="tabs" id="log-source"></div>
+      </div>
+
+      <div class="prefrow">
+        <h3>Show</h3>
+        <div class="tabs" id="log-component"></div>
+      </div>
+
+      <div class="logbar">
+        <label for="log-search">Search</label>
+        <input id="log-search" type="search" maxlength="100"
+               autocomplete="off" spellcheck="false">
+        <button type="button" class="action" id="log-refresh">Refresh</button>
+      </div>
+      <p class="logstatus" id="log-status" aria-live="polite"></p>
+      <pre class="logview" id="log-view" tabindex="0"
+           aria-label="Kodi log lines, newest last"></pre>
+      <div class="logdl" id="log-downloads"></div>
     </section>
 
     </div><!-- /view-settings -->
@@ -2940,6 +2998,154 @@ function renderSettings() {
     });
   });
 }
+
+/* ---------- Kodi log ---------- */
+
+/* What the log panel is showing; kept per page load, not saved. */
+const LOGVIEW = { info: null, source: "current", component: "all",
+                  timer: null, seq: 0 };
+
+/**
+ * <summary>
+ * A file's modified time, as a stamp fmtStamp understands, in local time.
+ * </summary>
+ * <param name="seconds">Epoch seconds, or null.</param>
+ * <returns>"YYYY-MM-DD HH:MM", or "".</returns>
+ */
+function logStamp(seconds) {
+  if (!seconds) return "";
+  const d = new Date(seconds * 1000);
+  const two = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate())
+    + " " + two(d.getHours()) + ":" + two(d.getMinutes());
+}
+
+/**
+ * <summary>
+ * Ask whether the log may be shown, and if so build the panel's choices
+ * and load the view. The panel stays hidden with no password set.
+ * </summary>
+ */
+async function loadLogPanel() {
+  const panel = $("logpanel");
+  let info;
+  try {
+    const response = await fetch("/api/logs", { cache: "no-store" });
+    if (!response.ok) { panel.style.display = "none"; return; }
+    info = await response.json();
+  } catch (err) { panel.style.display = "none"; return; }
+  if (!info.enabled) { panel.style.display = "none"; return; }
+  LOGVIEW.info = info;
+  panel.style.display = "";
+  renderLogChoices();
+  loadLogView();
+}
+
+/**
+ * <summary>
+ * Draw the log and component toggles and the download links.
+ * </summary>
+ */
+function renderLogChoices() {
+  const info = LOGVIEW.info;
+  /* The toggles are rebuilt, so a keyboard user's focus would fall back to
+     the page; note which one had it and give it back afterwards. */
+  const had = document.activeElement;
+  const refocus = had && had.parentNode
+    && (had.parentNode.id === "log-source" || had.parentNode.id === "log-component")
+    ? [had.parentNode.id, had.textContent] : null;
+  const src = $("log-source");
+  src.textContent = "";
+  info.sources.forEach((s) => {
+    src.append(button(s.label, LOGVIEW.source === s.id, () => {
+      LOGVIEW.source = s.id;
+      renderLogChoices();
+      loadLogView();
+    }));
+  });
+  const comp = $("log-component");
+  comp.textContent = "";
+  info.components.forEach((c) => {
+    comp.append(button(c.label, LOGVIEW.component === c.id, () => {
+      LOGVIEW.component = c.id;
+      renderLogChoices();
+      loadLogView();
+    }));
+  });
+  const dl = $("log-downloads");
+  dl.textContent = "";
+  info.sources.forEach((s) => {
+    if (!s.exists) return;
+    dl.append(el("a", { class: "action", download: "",
+                        href: "/api/logs/download?source="
+                              + encodeURIComponent(s.id) },
+                  "Download " + s.name + " ("
+                  + (s.bytes / 1048576).toFixed(1) + " MB)"));
+  });
+  if (refocus) {
+    const again = Array.from($(refocus[0]).children)
+      .find((b) => b.textContent === refocus[1]);
+    if (again) again.focus();
+  }
+}
+
+/**
+ * <summary>
+ * Fetch and show the newest matching entries of the chosen log, scrolled
+ * to the end so the most recent line is in view.
+ * </summary>
+ */
+async function loadLogView() {
+  const seq = ++LOGVIEW.seq;
+  const status = $("log-status");
+  const view = $("log-view");
+  const query = "source=" + encodeURIComponent(LOGVIEW.source)
+    + "&component=" + encodeURIComponent(LOGVIEW.component)
+    + "&q=" + encodeURIComponent($("log-search").value.trim());
+  status.textContent = "Reading the log\u2026";
+  let data;
+  try {
+    const response = await fetch("/api/logs/view?" + query,
+                                 { cache: "no-store" });
+    data = await response.json();
+    if (!response.ok) throw new Error(data.error || ("HTTP " + response.status));
+  } catch (err) {
+    if (seq !== LOGVIEW.seq) return;
+    status.textContent = "Could not read the log: " + err.message;
+    view.textContent = "";
+    return;
+  }
+  /* A slower earlier request must not overwrite a newer one. */
+  if (seq !== LOGVIEW.seq) return;
+  view.textContent = "";
+  if (!data.exists) {
+    status.textContent = data.name + " is not there yet.";
+    return;
+  }
+  data.entries.forEach((text) => {
+    const line = el("span", {}, text + "\n");
+    if (/^\S+ \S+ T:\d+\s+(warning|error|fatal) </i.test(text)) {
+      line.className = "problem";
+    }
+    view.append(line);
+  });
+  const shown = data.entries.length;
+  let msg = shown
+    ? "Showing the newest " + shown.toLocaleString() + " of "
+      + data.matched.toLocaleString() + " matching entries"
+    : "Nothing matches";
+  msg += data.partial ? ", from the newest part of " : ", from ";
+  msg += data.name + " (" + (data.bytes / 1048576).toFixed(1) + " MB, written "
+    + fmtStamp(logStamp(data.modified)) + ").";
+  status.textContent = msg;
+  view.scrollTop = view.scrollHeight;
+}
+
+$("log-search").addEventListener("input", () => {
+  clearTimeout(LOGVIEW.timer);
+  LOGVIEW.timer = setTimeout(loadLogView, 350);
+});
+$("log-refresh").addEventListener("click", loadLogPanel);
 
 /**
  * <summary>
@@ -7540,7 +7746,7 @@ function openView(name) {
     loadBulkDays();
     loadDatePush();
   }
-  if (name === "settings") renderSettings();
+  if (name === "settings") { renderSettings(); loadLogPanel(); }
   if (name === "movies" || name === "tv") loadMediaPage(name);
   if (name === "movies-library") loadLibrary("movies");
   if (name === "tv-library") loadLibrary("tv");

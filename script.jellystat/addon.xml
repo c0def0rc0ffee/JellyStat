@@ -7,7 +7,7 @@
   licence and icon.
   </summary>
 -->
-<addon id="script.jellystat" name="JellyStat" version="0.28.9" provider-name="c0def0rc0ffee">
+<addon id="script.jellystat" name="JellyStat" version="0.29.0" provider-name="c0def0rc0ffee">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>
@@ -26,7 +26,10 @@ Because Jellyfin keeps only a play count and a single last-played date, JellySta
 Also: rate what you have watched and have the score written back to Jellyfin; keep your own lists of titles and import the ones a Trakt export carries; import history from Trakt, Letterboxd, Jellyfin Playback Reporting or another JellyStat box, with a preview of exactly what each import would change before it writes anything; and recommendations drawn from your own history and ratings rather than from any outside service.
 
 Reuses the login from the Jellyfin for Kodi addon automatically, or connect with a server URL and API key.</description>
-    <news lang="en_GB">v0.28.9
+    <news lang="en_GB">v0.29.0
+The dashboard's Settings page can show the Kodi log of the box it runs on, narrowed to playback, errors or one add-on, with a search and downloads of the whole file. Only offered when a dashboard password is set, because the log holds server addresses and account ids.
+
+v0.28.9
 Connects to Jellyfin 12 again. Newer servers refuse the old way JellyStat sent its login, which showed as "Jellyfin rejected the login (401)" on every page.
 
 v0.28.8

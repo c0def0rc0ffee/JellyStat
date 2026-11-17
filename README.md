@@ -3,7 +3,7 @@
 <p align="center"><a href="#quick-start">Quick start</a> · <a href="#features">Features</a> · <a href="#dashboard-and-security">Dashboard</a> · <a href="docs/SETTINGS.md">Settings</a> · <a href="#more">Docs</a> · <a href="../../releases">Changelog</a></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.28.9-blue" alt="Version 0.28.9">
+  <img src="https://img.shields.io/badge/version-0.29.0-blue" alt="Version 0.29.0">
   <img src="https://img.shields.io/badge/licence-MIT-green" alt="MIT licence">
   <img src="https://img.shields.io/badge/python-3-3776AB?logo=python&logoColor=white" alt="Python 3">
   <img src="https://img.shields.io/badge/Kodi-19%2B%20Matrix-17B2E7?logo=kodi&logoColor=white" alt="Kodi 19 Matrix or newer">
@@ -41,7 +41,7 @@ Every screenshot comes from an invented demo library.
 
 ## Dashboard and security
 
-Switch it on in **Settings → Web dashboard → Enable the web dashboard**, then press **Web dashboard address** to see what to type into a browser. The default port is 8099. It is built for a home network: plain HTTP, and the password is a household convenience. Never port forward it. Without a password it serves the Kodi box only.
+Switch it on in **Settings → Web dashboard → Enable the web dashboard**, then press **Web dashboard address** to see what to type into a browser. The default port is 8099. It is built for a home network: plain HTTP, and the password is a household convenience. Never port forward it. Without a password it serves the Kodi box only. With a password set, its Settings page can also show [the Kodi log](docs/DASHBOARD.md#kodi-log) of the box it runs on.
 
 ## More
 

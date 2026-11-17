@@ -86,6 +86,15 @@ These are stored in the browser, so each device can have its own.
 - **Now playing popup**: which corner or edge it appears in.
 - **Recommendations**: what Discover and Similar may suggest, set separately for films and TV: **Only ones I have not seen**, or **Seen and new**.
 
+### Kodi log
+
+With a dashboard password set, the Settings page also shows the log of the Kodi the dashboard runs on, so a fault can be tracked down without fetching the file from the box by hand. Without a password the panel is hidden and the log endpoints refuse, because the log holds server addresses, account ids and sometimes stream tokens. Like the rest of the dashboard it travels over plain HTTP, so it is for the home network only.
+
+- **Log**: **This run** is `kodi.log`, **Last run** is `kodi.old.log` from before Kodi last started.
+- **Show**: everything, errors and warnings only, playback (files opening and closing, the Functional skip pill and sleep timer), or one add-on: Functional, Engage, JellyRate, JellyDualPlay, JellyStat or Jellyfin.
+- **Search** narrows it further, ignoring case, and reaches the lines of a traceback as well as the line that starts it.
+- The view shows the newest 400 matching entries from the last 4 MB of the file. **Download** buttons give the whole file.
+
 ## Your own copy of the library
 
 Every dashboard load also folds the fetched library into a local mirror (`items` in `history.db`): one row per watched film and episode, inserted or updated only when something changed.

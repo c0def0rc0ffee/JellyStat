@@ -40,6 +40,7 @@ import backup
 import dates
 import history
 import importer
+import kodilog
 import library
 import lists
 import media as artwork
@@ -621,6 +622,17 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, screentime.screen_time(max(2, min(days, 90))))
         elif route.path == "/api/export":
             self._serve_export()
+        elif route.path == "/api/logs":
+            if not self._password():
+                self._send_json(200, {"enabled": False})
+            else:
+                payload = kodilog.listing()
+                payload["enabled"] = True
+                self._send_json(200, payload)
+        elif route.path == "/api/logs/view":
+            self._serve_log_view(parse_qs(route.query))
+        elif route.path == "/api/logs/download":
+            self._serve_log_download(parse_qs(route.query))
         else:
             self._send_json(404, {"error": "Unknown endpoint."})
 
@@ -1456,6 +1468,92 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, blob, "application/octet-stream",
                    [("Content-Disposition",
                      'attachment; filename="%s"' % name)])
+
+    def _log_refused(self):
+        """
+        <summary>
+        Refuse a Kodi log request when no dashboard password is set.
+        </summary>
+        <returns>True when the request was refused and answered.</returns>
+        <remarks>
+        The log holds server addresses, user ids and sometimes stream
+        tokens, so it is only offered behind a password, even though a
+        dashboard with no password is already limited to this machine.
+        </remarks>
+        """
+        if self._password():
+            return False
+        self._send_json(403, {"error": "Set a dashboard password in "
+                                       "JellyStat's settings to read the "
+                                       "Kodi log here."})
+        return True
+
+    def _serve_log_view(self, query):
+        """
+        <summary>
+        The newest entries of kodi.log or kodi.old.log, narrowed by add-on and search text.
+        </summary>
+        <param name="query">Parsed query: source, component, q, limit.</param>
+        """
+        if self._log_refused():
+            return
+        try:
+            limit = int((query.get("limit") or [kodilog.DEFAULT_LIMIT])[0])
+        except ValueError:
+            limit = kodilog.DEFAULT_LIMIT
+        try:
+            payload = kodilog.tail((query.get("source") or ["current"])[0],
+                                   (query.get("component") or ["all"])[0],
+                                   (query.get("q") or [""])[0], limit)
+        except ValueError as err:
+            self._send_json(404, {"error": str(err)})
+            return
+        self._send_json(200, payload)
+
+    def _serve_log_download(self, query):
+        """
+        <summary>
+        Send the whole of kodi.log or kodi.old.log as a file, in chunks.
+        </summary>
+        <param name="query">Parsed query: source.</param>
+        <remarks>
+        Streamed rather than read whole: with debug logging on the file can
+        run to tens of megabytes. Exactly the size taken at open is sent, so
+        lines Kodi writes meanwhile do not break the Content-Length.
+        </remarks>
+        """
+        if self._log_refused():
+            return
+        opened = kodilog.open_source((query.get("source") or [""])[0])
+        if not opened:
+            self._send(404, "No such log.", "text/plain; charset=utf-8")
+            return
+        name, handle, size = opened
+        with handle:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Disposition",
+                             'attachment; filename="%s"' % name)
+            self.end_headers()
+            left = size
+            try:
+                while left > 0:
+                    chunk = handle.read(min(65536, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+                # A file that shrank under us (Kodi restarting and rotating
+                # it) would leave the response short of its announced length;
+                # pad it so the browser does not hang waiting.
+                if left > 0:
+                    self.wfile.write(b"\n" * left)
+            except OSError:
+                # Cancelled, reset or timed out part way: the headers are
+                # already sent, so there is nothing useful left to say.
+                pass
 
     def _serve_trakt_unmatched(self, query):
         """
